@@ -1,10 +1,12 @@
 ## v2.3.1 — 2026-10-22
 
-- **Notifikasi tidak lagi terpotong**: Toast sistem Android memotong teks panjang (~2 baris, lebih parah di skin vendor — pesan error router seperti 108007 tampil "router me…" saja). Ui.toast kini banner dalam aplikasi: teks utuh membungkus multi-baris di atas bar bawah, lama tampil menyesuaikan panjang teks (3,5–9,5 dtk), ketuk untuk menutup. Berlaku global karena semua notifikasi lewat satu fungsi itu; cadangan Toast hanya bila tidak ada Activity.
-- **Channel/bandwidth WiFi terdeteksi benar**: terbukti dari wlanadvanced.js firmware — halaman advanced WebUI membaca nilai lanjutan dari basic-settings (profil utama), bukan blok multi-basic yang di firmware ini bernilai 0/Otomatis. Bagian LANJUTAN membaca dari basic-settings; simpan menulis balik penuh (read-modify-write bedah) ke basic-settings + tambalan multi-basic sebagai sinkronisasi, persis pola WebUI; jatuh ke cara lama bila jalur basic gagal, hasil sebagian dilaporkan jujur. Diagnostik "Profil WLAN" menampilkan profil utama (basic) lebih dulu.
-- **Tombol mata di kolom password**: Login router, Password WiFi, dan password profil APN — ikon mata gambar-sendiri (tanpa aset), ketuk untuk melihat/menyembunyikan.
-- **LAN & DHCP diperbaiki** (terbukti dari dhcp.js firmware): subnet mask memakai kunci asli `DhcpLanNetmask` (sebelumnya dicari sebagai DhcpSubnetMask yang tidak ada — kolom selalu kosong); saklar Server DHCP memakai kunci asli `DhcpStatus` 1/0 (sebelumnya DhcpEnable — selalu tampil menyala dan tidak berpengaruh); kolom **DNS Primer & Sekunder baru** dengan semantik WebUI (ada isi = manual `DnsStatus` 0, keduanya kosong = otomatis dari operator `DnsStatus` 1, elemen kosong tetap dikirim). Konfigurasi router tidak pernah rusak oleh kunci lama: kunci salah diabaikan firmware dan nilai asli terbawa apa adanya.
-- **Layar Kunci Band dibersihkan**: teks "Info dukungan modem" (cuplikan XML mentah dari net-mode-list) dihapus — tidak ditampilkan dan endpoint-nya tidak lagi dipanggil.
+Rilis ini isinya perbaikan dari hasil pemakaian langsung di router beneran — beberapa bug memang cuma ketahuan pas dipakai harian:
+
+- **Notifikasi nggak kepotong lagi.** Dulu pesan panjang, apalagi pesan error dari router, tampilnya cuma sepotong gara-gara Toast bawaan Android. Sekarang notifikasi tampil sebagai banner di dalam aplikasi: teksnya utuh, bisa multi-baris, lama tampilnya mengikuti panjang teks. Ketuk saja kalau mau menutup cepat.
+- **Channel & bandwidth WiFi sekarang terbaca dengan benar.** Kemarin aplikasi membaca dari tempat yang salah, jadi channel selalu tampil "Otomatis" padahal router sedang jalan di channel 11 / 40 MHz. Sekarang sumber bacanya sama persis seperti WebUI router, dan menyimpan pengaturannya juga mengikuti cara WebUI — jadi yang diubah benar-benar terpakai.
+- **Ada tombol mata di kolom password.** Buat mengecek yang diketik sudah benar atau belum. Ada di halaman login, password WiFi, dan password APN.
+- **LAN & DHCP dibenerin, sekalian dapat kolom DNS.** Subnet mask kemarin selalu kosong dan saklar DHCP ternyata tidak berpengaruh apa-apa — dua-duanya karena aplikasi memakai nama kunci yang beda dari yang dipakai firmware. Sudah dibetulkan mengikuti firmware-nya langsung. Plus kolom DNS Primer & Sekunder baru: isi kalau mau DNS manual, kosongkan kalau mau ikut operator.
+- **Layar kunci band lebih bersih.** Teks "info dukungan modem" yang isinya XML mentah sudah dibuang — tidak penting dan cuma bikin penuh layar.
 
 ## v2.3.0 — 2026-10-22
 
