@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#05080F; font-family: Roboto, Arial, sans-serif; color:#E8EEF9; width:360px; }
+  .screen { padding:16px 14px 0; }
+  .cap { color:#5E7292; font-size:11px; font-weight:700; letter-spacing:1.4px; padding:14px 14px 0; }
+  h1 { font-size:24px; font-weight:800; }
+  .sub { color:#8296B5; font-size:13px; margin:3px 0 16px; }
+  .lab { color:#8296B5; font-size:11px; font-weight:700; letter-spacing:1.2px; margin:13px 0 6px; }
+  .field { background:#0C1425; border:1px solid #1B2A47; border-radius:12px; padding:13px 14px; font-size:16.5px; color:#E8EEF9; }
+  .sess { background:#0E2417; border:1px solid #1E4630; border-radius:14px; padding:13px 14px; margin-top:18px; }
+  .sess b { color:#3DDC84; font-size:15.5px; }
+  .sess p { color:#A8C3B2; font-size:12.5px; line-height:1.5; margin-top:5px; }
+  .row { display:flex; gap:10px; margin-top:14px; }
+  .btn { flex:1; background:#2E5FA3; color:#fff; text-align:center; font-weight:700; font-size:14.5px; padding:14px 0; border-radius:12px; }
+  .btn.big { margin-top:12px; }
+  .btn.ghost { background:#0C1425; border:1px solid #1B2A47; color:#9DB4D8; }
+  .nav { display:flex; border-top:1px solid #14203A; padding:10px 2px 12px; margin-top:16px;
+         color:#5E7292; font-size:9.5px; font-weight:700; letter-spacing:.4px; text-align:center; }
+  .nav div { flex:1; }
+  .nav .on { color:#6EA8FF; }
+  .menurow { background:#0C1425; border:1px solid #1B2A47; border-radius:12px; padding:13px 14px; margin-top:9px;
+             display:flex; justify-content:space-between; align-items:center; }
+  .menurow .t { font-size:15px; font-weight:600; }
+  .menurow .d { color:#8296B5; font-size:12px; margin-top:2px; }
+  .menurow .arr { color:#5E7292; font-size:18px; }
+  .chips { display:flex; gap:8px; margin-top:8px; }
+  .chip { border:1px solid #1B2A47; background:#0C1425; color:#9DB4D8; border-radius:18px; padding:7px 13px; font-size:12.5px; font-weight:700; }
+  .chip.on { background:#2E5FA3; color:#fff; border-color:#2E5FA3; }
+</style></head>
+<body>
+  <div class="cap">LAYAR 1 — TAB LOGIN (BARU)</div>
+  <div class="screen">
+    <h1>Login</h1>
+    <div class="sub">Koneksi ke router</div>
+    <div class="lab">ALAMAT ROUTER</div><div class="field">192.168.8.1</div>
+    <div class="lab">USERNAME</div><div class="field">admin</div>
+    <div class="lab">PASSWORD</div><div class="field">••••••••</div>
+    <div class="sess"><b>● Sesi aktif</b><p>Login 20:16 · satu sesi dipakai bersama semua layar, diperbarui otomatis hanya bila kedaluwarsa. Password tersimpan terenkripsi (Keystore) di HP.</p></div>
+    <div class="row"><div class="btn">LOGIN</div><div class="btn">LOGOUT</div></div>
+    <div class="btn big">SIMPAN &amp; TES KONEKSI</div>
+    <div class="btn big ghost">BUKA WEBUI</div>
+    <div class="nav"><div>DASHBOARD</div><div class="on">LOGIN</div><div>SETELAN</div></div>
+  </div>
+  <div class="cap">LAYAR 2 — SETELAN SESUDAHNYA (RAMPING)</div>
+  <div class="screen">
+    <h1>Setelan</h1>
+    <div class="sub">Pengaturan router &amp; aplikasi</div>
+    <div class="menurow"><div><div class="t">Pengaturan Router</div><div class="d">WiFi · LAN &amp; DHCP · USSD · Profil APN · Diagnostik</div></div><div class="arr">›</div></div>
+    <div class="lab" style="margin-top:18px">INTERVAL PERBARUI DASHBOARD</div>
+    <div class="chips"><div class="chip on">5 dtk</div><div class="chip">10 dtk</div><div class="chip">30 dtk</div><div class="chip">Manual</div></div>
+    <div class="menurow" style="margin-top:18px"><div><div class="t">Tentang</div><div class="d">NetAver HiLink v2.2.2</div></div><div class="arr">›</div></div>
+    <div class="nav"><div>DASHBOARD</div><div>LOGIN</div><div class="on">SETELAN</div></div>
+  </div>
+</body></html>

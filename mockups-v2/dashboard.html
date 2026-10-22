@@ -1,0 +1,45 @@
+<link rel="stylesheet" href="style.css">
+<style>
+.head{display:flex;align-items:center;gap:11px}
+.head img{width:42px;height:42px;object-fit:contain}
+.head .t1{font-size:19px;font-weight:700}
+.head .t2{color:#3ecf6e;font-size:12.5px}
+.bars{display:flex;align-items:flex-end;gap:3px;height:30px}
+.bars i{display:block;width:7px;border-radius:2px;background:#2a3350}
+.bars i.f{background:#3ecf6e}
+.sig{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.sig .cell{background:#121a30;border:1px solid #1e2a4a;border-radius:12px;padding:10px 12px}
+.qa{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:12px}
+.qa .q{background:#121a30;border:1px solid #1e2a4a;border-radius:12px;padding:11px 2px;text-align:center;font-size:11.5px;color:#c6cfe2}
+.qa .q b{display:block;font-size:19px;margin-bottom:4px}
+.restart{margin-top:12px;border:1.5px solid #a33;color:#f26d6d;text-align:center;font-weight:700;font-size:15.5px;padding:14px;border-radius:10px;letter-spacing:.3px}
+</style>
+<div class="content">
+  <div class="head"><img src="logo.png"><div><div class="t1">NetAver HiLink</div><div class="t2">● Terhubung · 192.168.8.1</div></div><div style="margin-left:auto;text-align:right"><div class="k">BATERAI</div><div class="v" style="color:#3ecf6e">100%</div></div></div>
+  <div class="card" style="margin-top:14px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><div style="font-size:19px;font-weight:700;line-height:1.25">3SinyalKuatHemat · 4G LTE ·<br>B1</div><div style="color:#8a94b0;font-size:13px;margin-top:3px">Terhubung · durasi 02:01:03</div></div>
+      <div class="bars"><i class="f" style="height:9px"></i><i class="f" style="height:15px"></i><i class="f" style="height:21px"></i><i style="height:27px"></i><i style="height:30px"></i></div>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:9px;margin-top:12px"><span style="font-size:31px;font-weight:800">−93</span><span style="color:#8a94b0">dBm RSRP</span><span style="color:#3ecf6e;font-weight:700;margin-left:auto">Cukup</span></div>
+  </div>
+  <div class="sig">
+    <div class="cell"><div class="k">RSRQ</div><div class="v">−8 dB</div></div>
+    <div class="cell"><div class="k">SINR</div><div class="v">17 dB</div></div>
+    <div class="cell"><div class="k">RSSI</div><div class="v">−73 dBm</div></div>
+    <div class="cell"><div class="k">PCI</div><div class="v">441</div></div>
+    <div class="cell"><div class="k">CELL ID</div><div class="v" style="font-size:15px">128762901</div></div>
+    <div class="cell"><div class="k">PERANGKAT</div><div class="v">2 WiFi</div></div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div style="display:flex;justify-content:space-between"><span class="k">SESI INI</span><span class="k">BULAN INI</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:5px"><span style="font-size:16.5px;font-weight:700">↓ 90,2 MB · ↑ 34,8 MB</span><span style="font-size:16.5px;font-weight:700">33,5 GB</span></div>
+    <div style="color:#8a94b0;font-size:12.5px;margin-top:6px;line-height:1.55">Total kumulatif: ↓ 444,7 GB · ↑ 72,3 GB<br>Kecepatan sekarang: ↓ 26,6 KB/s · ↑ 17,1 KB/s<br>🟨 200 SMS belum dibaca</div>
+  </div>
+  <div class="qa">
+    <div class="q"><b>📊</b>Mode</div><div class="q"><b>🎯</b>Band</div><div class="q"><b>✉️</b>SMS</div><div class="q"><b>📡</b>Antena</div><div class="q"><b>🖥️</b>Perangkat</div>
+  </div>
+  <div class="restart">RESTART ROUTER</div>
+  <div style="margin-top:auto;color:#68748f;font-size:12px;text-align:center">Diperbarui tiap 5 detik · sesi login tunggal, dipakai bersama semua layar</div>
+</div>
+<div class="tabs"><span class="on">DASHBOARD</span><span>LOGIN</span><span>SETELAN</span></div>

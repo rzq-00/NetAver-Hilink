@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <LinearLayout style="@style/Card" android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Router"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
+            <EditText
+                android:id="@+id/set_ip"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="192.168.8.1"
+                android:textColor="@color/text"
+                android:textColorHint="@color/faint"
+                android:inputType="text"
+                android:singleLine="true"
+                android:layout_marginTop="6dp" />
+            <EditText
+                android:id="@+id/set_user"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Username (admin)"
+                android:textColor="@color/text"
+                android:textColorHint="@color/faint"
+                android:inputType="text"
+                android:singleLine="true"
+                android:layout_marginTop="6dp" />
+            <EditText
+                android:id="@+id/set_pass"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Password"
+                android:textColor="@color/text"
+                android:textColorHint="@color/faint"
+                android:inputType="textPassword"
+                android:singleLine="true"
+                android:layout_marginTop="6dp" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+                <Button
+                    android:id="@+id/set_save"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Simpan" />
+                <Button
+                    android:id="@+id/set_login"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Test Login"
+                    android:layout_marginLeft="8dp" />
+            </LinearLayout>
+            <TextView
+                android:id="@+id/set_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="@color/faint"
+                android:textSize="12sp"
+                android:layout_marginTop="6dp" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/Card" android:orientation="vertical" android:layout_marginTop="12dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Device"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
+            <Button
+                android:id="@+id/set_reboot"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Reboot Router"
+                android:layout_marginTop="6dp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="NetAver HiLink v1.0"
+            android:textColor="@color/faint"
+            android:textSize="11sp"
+            android:gravity="center"
+            android:paddingTop="16dp" />
+    </LinearLayout>
+</ScrollView>

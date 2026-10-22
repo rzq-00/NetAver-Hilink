@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <LinearLayout style="@style/Card" android:orientation="vertical">
+        <EditText
+            android:id="@+id/sms_phone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Nomor tujuan"
+            android:textColor="@color/text"
+            android:textColorHint="@color/faint"
+            android:inputType="phone"
+            android:singleLine="true" />
+        <EditText
+            android:id="@+id/sms_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Isi SMS"
+            android:textColor="@color/text"
+            android:textColorHint="@color/faint"
+            android:inputType="textMultiLine"
+            android:minLines="2"
+            android:layout_marginTop="6dp" />
+        <Button
+            android:id="@+id/sms_send"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Kirim"
+            android:layout_marginTop="6dp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="6dp">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Inbox"
+            android:textColor="@color/text"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+        <Button
+            android:id="@+id/sms_refresh"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Refresh" />
+    </LinearLayout>
+
+    <ListView
+        android:id="@+id/sms_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@color/border"
+        android:dividerHeight="1dp" />
+
+    <TextView
+        android:id="@+id/sms_error"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="@color/red"
+        android:textSize="12sp" />
+</LinearLayout>

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <LinearLayout style="@style/Card" android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Network Mode"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
+            <RadioGroup
+                android:id="@+id/mode_group"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="6dp">
+                <RadioButton android:id="@+id/mode_auto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Auto" android:textColor="@color/text" android:checked="true" />
+                <RadioButton android:id="@+id/mode_lte" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="4G only" android:textColor="@color/text" />
+                <RadioButton android:id="@+id/mode_3g" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="3G only" android:textColor="@color/text" />
+            </RadioGroup>
+        </LinearLayout>
+
+        <LinearLayout style="@style/Card" android:orientation="vertical" android:layout_marginTop="12dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="LTE Band Lock"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Lock LTE bands for better speed and stability."
+                android:textColor="@color/faint"
+                android:textSize="11sp"
+                android:layout_marginTop="2dp" />
+            <LinearLayout
+                android:id="@+id/band_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="8dp" />
+            <Button
+                android:id="@+id/band_apply"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Apply Bands"
+                android:layout_marginTop="12dp" />
+            <TextView
+                android:id="@+id/band_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="@color/faint"
+                android:textSize="11sp"
+                android:layout_marginTop="6dp" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>
