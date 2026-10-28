@@ -127,4 +127,10 @@ object Format {
         v >= -19.0 -> 0xFFFFA726.toInt()
         else -> 0xFFFF5252.toInt()
     }
+
+    fun rssiColor(v: Double): Int = when {
+        v >= -65.0 -> 0xFF4CD964.toInt()
+        v >= -85.0 -> 0xFFFFA726.toInt()
+        else -> 0xFFFF5252.toInt()
+    }
 }

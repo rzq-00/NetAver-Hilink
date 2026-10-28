@@ -10,6 +10,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
+import com.netaver.hilink.core.LanGuard
 import com.netaver.hilink.core.UssdText
 import com.netaver.hilink.net.HilinkClient
 import com.netaver.hilink.net.HilinkClient.HilinkException
@@ -576,6 +577,11 @@ class DhcpScreen(private val act: MainActivity) : Screen {
             (dns1.isNotEmpty() && !validIp(dns1)) || (dns2.isNotEmpty() && !validIp(dns2))
         ) {
             Ui.toast(act, "Format IP belum benar"); return
+        }
+        // the app will follow a gateway change — it must stay a LAN address
+        val guard = LanGuard.check(gw)
+        if (guard is LanGuard.Result.Bad) {
+            Ui.toast(act, guard.reason); return
         }
         val changed = gw != act.app().prefs.routerIp
         Ui.confirm(act, "Terapkan pengaturan DHCP?",

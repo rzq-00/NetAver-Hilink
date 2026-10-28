@@ -21,6 +21,10 @@ class DashboardScreen(private val act: MainActivity) : Screen {
     private lateinit var batteryV: TextView
     private lateinit var heroTitle: TextView
     private lateinit var heroSub: TextView
+    private lateinit var dataBtn: TextView
+    private var lastConnected = false
+    private var toggling = false
+    private lateinit var wanIpView: TextView
     private lateinit var rsrpBig: TextView
     private lateinit var rsrpUnit: TextView
     private lateinit var rsrpGrade: TextView
@@ -79,7 +83,14 @@ class DashboardScreen(private val act: MainActivity) : Screen {
         heroTxt.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         heroTitle = Ui.text(ctx, "—", 19f, Ui.TXT, true)
         heroSub = Ui.text(ctx, "—", 13f, Ui.SUB)
-        heroTxt.addView(heroTitle); heroTxt.addView(heroSub)
+        heroSub.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        val heroSubRow = LinearLayout(ctx); heroSubRow.orientation = LinearLayout.HORIZONTAL
+        heroSubRow.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        heroSubRow.addView(heroSub)
+        // vc35: the duration row is text-only again (the ⇄ toggle moved to
+        // the WAN IP row below). NOT the PERANGKAT card (that feature was
+        // not in the mockup and is not part of this version).
+        heroTxt.addView(heroTitle); heroTxt.addView(heroSubRow)
         heroTop.addView(heroTxt)
         barsRow = LinearLayout(ctx); barsRow.orientation = LinearLayout.HORIZONTAL
         barsRow.gravity = Gravity.BOTTOM
@@ -99,6 +110,29 @@ class DashboardScreen(private val act: MainActivity) : Screen {
         rsrpGrade.setPadding(0, Ui.dp(ctx, 10), 0, 0)
         bigRow.addView(rsrpGrade)
         hero.addView(bigRow)
+        // WAN IP on its own row below the RSRP row (vc33: moved out of the
+        // duration row, where the IP crowded the duration and forced it to
+        // wrap). vc35: the ⇄ data toggle lives HERE at the far right end,
+        // right-aligned in a fixed 36dp slot SEPARATE from the WAN IP text
+        // (the text stays centered in its weighted cell), so the icon's
+        // position never shifts when the IP text length changes or becomes
+        // "—". Tapping toggles via the existing dataswitch API; each tap is
+        // explicit, so no extra confirmation dialog.
+        val wanIpRow = LinearLayout(ctx); wanIpRow.orientation = LinearLayout.HORIZONTAL
+        wanIpRow.gravity = Gravity.CENTER_VERTICAL
+        wanIpRow.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        wanIpRow.setPadding(0, Ui.dp(ctx, 10), 0, 0)
+        wanIpView = Ui.text(ctx, "IP WAN —", 13f, Ui.TXT)
+        wanIpView.gravity = Gravity.CENTER
+        wanIpView.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        wanIpRow.addView(wanIpView)
+        dataBtn = Ui.text(ctx, "⇄", 18f, Ui.SUB, true)
+        dataBtn.gravity = Gravity.CENTER
+        dataBtn.background = Ui.bg(Ui.CARD2, 18, ctx, Ui.BORDER)
+        dataBtn.layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 36), Ui.dp(ctx, 36))
+        dataBtn.setOnClickListener { toggleData() }
+        wanIpRow.addView(dataBtn)
+        hero.addView(wanIpRow)
         root.addView(hero)
 
         // signal grid
@@ -118,6 +152,13 @@ class DashboardScreen(private val act: MainActivity) : Screen {
                 cell.layoutParams = lp
                 cell.addView(Ui.text(ctx, k, 11.5f, Ui.SUB))
                 val v = Ui.text(ctx, "—", 17f, Ui.TXT, true)
+                if (k == "CELL ID") {
+                    // 9-digit CELL ID must stay on ONE line or its card grows
+                    // taller than PCI/PERANGKAT. 14sp fits 9 bold digits in the
+                    // card's inner width on a 360dp screen; singleLine forbids wrap.
+                    v.setSingleLine(true)
+                    v.textSize = 14f
+                }
                 cells[k] = v
                 cell.addView(v)
                 row.addView(cell)
@@ -204,6 +245,32 @@ class DashboardScreen(private val act: MainActivity) : Screen {
         handler.postDelayed({ if (visible) { refresh(); schedule() } }, secs * 1000L)
     }
 
+    /** vc35: icon state is read from the BACKGROUND — solid green + white
+     *  glyph = connected (data on), dark card + gray glyph = disconnected. */
+    private fun setDataBtnState(connected: Boolean) {
+        if (connected) {
+            dataBtn.background = Ui.bg(Ui.GREEN, 18, act)
+            dataBtn.setTextColor(android.graphics.Color.WHITE)
+        } else {
+            dataBtn.background = Ui.bg(Ui.CARD2, 18, act, Ui.BORDER)
+            dataBtn.setTextColor(Ui.SUB)
+        }
+    }
+
+    /** Toggle mobile data via the existing dataswitch API, then refresh
+     *  so state, duration and WAN IP update. Guarded against double-taps;
+     *  failures toast and leave the icon unchanged. */
+    private fun toggleData() {
+        if (toggling) return
+        toggling = true
+        val target = !lastConnected
+        Bg.run({ act.app().client().setDataSwitch(target) }) { r ->
+            toggling = false
+            r.onSuccess { refresh() }
+            r.onFailure { Ui.toast(act, "Gagal: ${it.message}") }
+        }
+    }
+
     private fun refresh() {
         if (loading) return
         loading = true
@@ -230,6 +297,8 @@ class DashboardScreen(private val act: MainActivity) : Screen {
             res.onFailure { e ->
                 statusSub.text = "● Gagal terhubung · ${act.app().prefs.routerIp}"
                 statusSub.setTextColor(Ui.RED)
+                wanIpView.text = "IP WAN —"
+                setDataBtnState(false)
                 footNote.text = e.message ?: "Tidak terjangkau"
             }
         }
@@ -256,6 +325,12 @@ class DashboardScreen(private val act: MainActivity) : Screen {
         }
         heroSub.text = "$connTxt · durasi ${Format.duration(tr.connectTimeSec)}" +
             if (st.roaming == "1") " · ROAMING" else ""
+        // vc35: icon state follows the connection via its BACKGROUND —
+        // solid green + white glyph = connected (data on), dark card + gray
+        // glyph = disconnected. lastConnected drives the toggle direction.
+        lastConnected = st.connectionStatus == "901"
+        setDataBtnState(lastConnected)
+        wanIpView.text = if (st.wanIp.isNotEmpty()) "IP WAN ${st.wanIp}" else "IP WAN —"
         val rsrp = sg.rsrp.toIntOrNull()
         val noSignal = rsrp == null && sg.rscp.isEmpty() && sg.rssi.isEmpty()
         if (noSignal) {
@@ -264,28 +339,45 @@ class DashboardScreen(private val act: MainActivity) : Screen {
             rsrpBig.textSize = 23f
             rsrpUnit.visibility = View.GONE
             rsrpGrade.text = ""
-            drawBars(0, alert = true)
+            drawBars(0, Ui.SUB)
         } else if (rsrp != null) {
             rsrpBig.text = rsrp.toString()
-            rsrpBig.setTextColor(Ui.TXT)
+            rsrpBig.setTextColor(Format.rsrpColor(rsrp.toDouble()))
             rsrpBig.textSize = 31f
             rsrpUnit.visibility = View.VISIBLE
             val (label, bars) = Format.gradeRsrp(rsrp)
             rsrpGrade.text = label
-            drawBars(bars)
+            rsrpGrade.setTextColor(Format.rsrpColor(rsrp.toDouble()))
+            // vc34: filled bars colored by RSRP bands (agree with the RSRP
+            // number's quality tier): >= -90 green, -110..-90 yellow, < -110 red.
+            val barColor = when {
+                rsrp >= -90 -> Ui.GREEN
+                rsrp >= -110 -> Ui.AMBER
+                else -> Ui.RED
+            }
+            drawBars(bars, barColor)
         } else {
             rsrpBig.text = sg.rssi.ifEmpty { "—" }
-            rsrpBig.setTextColor(Ui.TXT)
+            rsrpBig.setTextColor(colorOrDefault(sg.rssi, Format::rssiColor))
             rsrpBig.textSize = 31f
             rsrpUnit.visibility = View.VISIBLE
             rsrpGrade.text = if (sg.rscp.isNotEmpty()) "3G · RSCP " + sg.rscp else ""
-            drawBars(st.signalIcon.toIntOrNull() ?: 0)
+            rsrpGrade.setTextColor(Ui.TXT)
+            // vc34: no RSRP — fall back to the SignalIcon level bands
+            // (5-6 green, 3-4 yellow, 0-2 red). Never crashes on missing data.
+            val icon = st.signalIcon.toIntOrNull() ?: 0
+            val iconColor = when {
+                icon >= 5 -> Ui.GREEN
+                icon >= 3 -> Ui.AMBER
+                else -> Ui.RED
+            }
+            drawBars(icon, iconColor)
         }
         cells["RSRQ"]?.text = dash(sg.rsrq, " dB")
         cells["SINR"]?.text = dash(sg.sinr, " dB")
         cells["RSSI"]?.text = dash(sg.rssi, " dBm")
         cells["PCI"]?.text = sg.pci.ifEmpty { "—" }
-        cells["CELL ID"]?.text = sg.cellId.ifEmpty { "—" }
+        cells["CELL ID"]?.text = sg.cellId.filter { !it.isWhitespace() }.ifEmpty { "—" }
         val radioCells = listOf("RSRQ", "SINR", "RSSI", "PCI", "CELL ID")
         if (noSignal) {
             for (k in radioCells) {
@@ -294,10 +386,15 @@ class DashboardScreen(private val act: MainActivity) : Screen {
                 cells[k]?.textSize = 12.5f
             }
         } else {
+            cells["RSRQ"]?.setTextColor(colorOrDefault(sg.rsrq, Format::rsrqColor))
+            cells["SINR"]?.setTextColor(colorOrDefault(sg.sinr, Format::sinrColor))
+            cells["RSSI"]?.setTextColor(colorOrDefault(sg.rssi, Format::rssiColor))
+            cells["PCI"]?.setTextColor(Ui.TXT)
+            cells["CELL ID"]?.setTextColor(Ui.TXT)
             for (k in radioCells) {
-                cells[k]?.setTextColor(Ui.TXT)
-                cells[k]?.textSize = 17f
+                if (k != "CELL ID") cells[k]?.textSize = 17f
             }
+            cells["CELL ID"]?.textSize = 14f
         }
         cells["PERANGKAT"]?.text = if (hostCount >= 0) "$hostCount WiFi" else "—"
         trafficLine.text = "↓ ${Format.bytes(tr.curDown)} · ↑ ${Format.bytes(tr.curUp)}"
@@ -311,7 +408,13 @@ class DashboardScreen(private val act: MainActivity) : Screen {
 
     private fun dash(v: String, unit: String): String = if (v.isEmpty()) "—" else v + unit
 
-    private fun drawBars(filled: Int, alert: Boolean = false) {
+    /** Metric string -> its quality color, or default text color when missing/non-numeric. Never crashes. */
+    private fun colorOrDefault(v: String, f: (Double) -> Int): Int =
+        v.toDoubleOrNull()?.let(f) ?: Ui.TXT
+
+    /** Signal bars: [filled] of 5 bars in [color]; unfilled bars stay gray.
+     *  No-signal (filled = 0) draws all bars gray. */
+    private fun drawBars(filled: Int, color: Int) {
         barsRow.removeAllViews()
         val heights = listOf(9, 15, 21, 27, 30)
         for (i in 0 until 5) {
@@ -320,7 +423,7 @@ class DashboardScreen(private val act: MainActivity) : Screen {
             if (i > 0) lp.leftMargin = Ui.dp(act, 3)
             b.layoutParams = lp
             b.background = Ui.bg(
-                if (alert) Color.rgb(96, 38, 38) else if (i < filled) Ui.GREEN else Color.rgb(42, 51, 80), 2, act)
+                if (i < filled) color else Color.rgb(42, 51, 80), 2, act)
             barsRow.addView(b)
         }
     }

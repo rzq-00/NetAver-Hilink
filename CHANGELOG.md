@@ -1,3 +1,11 @@
+## v2.4.0 — 28 Oktober 2026 / October 28, 2026
+
+- Dukungan ganti IMEI dan TTL. / Support for changing IMEI and TTL.
+- Tampilkan IP WAN dan tombol data on/off. / Show WAN IP and data on/off button.
+- Dukungan cek versi rilis. / Support for checking the release version.
+- Warna sinyal (hijau, kuning, merah). / Signal colors (green, yellow, red).
+- Layout Dashboard lebih rapi. / Tidier Dashboard layout.
+
 ## v2.3.1 — 2026-10-22
 
 Rilis ini isinya perbaikan dari hasil pemakaian langsung di router beneran — beberapa bug memang cuma ketahuan pas dipakai harian:
@@ -7,6 +15,7 @@ Rilis ini isinya perbaikan dari hasil pemakaian langsung di router beneran — b
 - **Ada tombol mata di kolom password.** Buat mengecek yang diketik sudah benar atau belum. Ada di halaman login, password WiFi, dan password APN.
 - **LAN & DHCP dibenerin, sekalian dapat kolom DNS.** Subnet mask kemarin selalu kosong dan saklar DHCP ternyata tidak berpengaruh apa-apa — dua-duanya karena aplikasi memakai nama kunci yang beda dari yang dipakai firmware. Sudah dibetulkan mengikuti firmware-nya langsung. Plus kolom DNS Primer & Sekunder baru: isi kalau mau DNS manual, kosongkan kalau mau ikut operator.
 - **Layar kunci band lebih bersih.** Teks "info dukungan modem" yang isinya XML mentah sudah dibuang — tidak penting dan cuma bikin penuh layar.
+- **Pemeriksaan alamat LAN ditegakkan di satu titik pusat** (hasil audit keamanan): dulu LanGuard cuma dicek pas login — sekarang alamat router dicek ulang setiap aplikasi membuat sambungan, tombol Buka WebUI juga melewati pemeriksaan yang sama, dan gateway baru di menu LAN & DHCP divalidasi harus alamat LAN sebelum diterapkan. Jadi tidak ada jalur yang bisa membuat aplikasi mengirim password router ke alamat non-LAN.
 
 ## v2.3.0 — 2026-10-22
 

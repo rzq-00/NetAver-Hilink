@@ -24,7 +24,7 @@ import java.security.MessageDigest
  *   (some modded WebUIs answer only one of them).
  */
 class HilinkClient(
-    private val host: String,
+    val host: String,
     private val username: String,
     private val password: String,
     initialScheme: Int = -1
@@ -34,7 +34,8 @@ class HilinkClient(
     data class Status(
         val connectionStatus: String = "", val signalIcon: String = "",
         val networkType: String = "", val roaming: String = "", val simStatus: String = "",
-        val batteryLevel: String = "", val batteryStatus: String = ""
+        val batteryLevel: String = "", val batteryStatus: String = "",
+        val wanIp: String = ""
     )
     data class Signal(
         val rssi: String = "", val rsrp: String = "", val rsrq: String = "",
@@ -275,16 +276,160 @@ class HilinkClient(
 
     fun status(): Status {
         val m = pubGet("/api/monitoring/status")
+        // WAN IP: monitoring/status WanIPAddress is primary. On some modded
+        // firmwares (verified: E5577S 21.333 / WebUI 17.100.20.01.03) that tag
+        // is absent, so fall back to device/information (fresh every call,
+        // never cached — a stale IP must never survive a refresh).
+        val wan = v(m, "WanIPAddress").ifEmpty { resolveWanIpFromDeviceInfo() }
         return Status(v(m, "ConnectionStatus"), v(m, "SignalIcon"), v(m, "CurrentNetworkType"),
             v(m, "RoamingStatus"), v(m, "SimStatus"),
             v(m, "BatteryPercent").ifEmpty {
                 // BatteryLevel on this firmware family is a 0..4 BAR scale, not a percent (4 = full = 100%).
                 v(m, "BatteryLevel").toIntOrNull()?.let { (it * 25).coerceAtMost(100).toString() } ?: ""
-            }, v(m, "BatteryStatus"))
+            }, v(m, "BatteryStatus"), wan)
+    }
+
+    /**
+     * WAN IP fallback chain (vc32). Never throws and never caches: any
+     * failure returns "" so the Dashboard shows the dash, never a stale IP.
+     * 1. device/information tag WanIPAddress, then tag IpAddress.
+     * 2. First strict IPv4 dotted-quad in the raw device/information text.
+     * No IP is ever hardcoded; the value always comes from the live response.
+     */
+    private fun resolveWanIpFromDeviceInfo(): String {
+        return try {
+            var m = authed("GET", "/api/device/information", null)
+            if (m.size <= 1) m = authed("POST", "/api/device/information", null)
+            val byTag = v(m, "WanIPAddress").ifEmpty { v(m, "IpAddress") }
+            if (byTag.isNotEmpty()) byTag else firstIpv4(m["__raw"] ?: "")
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    /**
+     * First strict IPv4 dotted-quad in [text]. Each octet must be 0-255 and
+     * the match must not be part of a longer dotted sequence, so firmware
+     * versions like 21.333.01.00.00 never match; MACs (colon-separated)
+     * can never match either.
+     */
+    private fun firstIpv4(text: String): String {
+        val octet = "(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)"
+        val re = Regex("(?<![0-9.])($octet\\.$octet\\.$octet\\.$octet)(?![0-9.])")
+        return re.find(text)?.groupValues?.get(1) ?: ""
     }
 
     /** Modded-WebUI daemon data (band/EARFCN/frequency from AT^HFREQINFO). Throws on stock firmware. */
     fun addParam(): Map<String, String> = pubGet("/config/deviceinformation/add_param.xml")
+
+    // ---------------- Mod WebUI (ilya-fedin Mod1.21) CGI on port 5080 ----------------
+    // Endpoints verified against the on-disk Mod1.21 package (modsettingscore.js
+    // calls exactly these): modsettings.cgi?cmd=get / cmd=set&mod=… (POST) /
+    // cmd=apply (GET), user_config.cgi?cmd=get_config / save_config (POST).
+    // The mod httpd serves its CGI without the main WebUI login, so no
+    // session/token is attached here. Read-only verification only; nothing
+    // in this client executes modem scripts — it only issues HTTP requests.
+
+    private fun modHttp(method: String, path: String, body: String?): String {
+        val c = URL("http://$host:5080$path").openConnection() as HttpURLConnection
+        c.connectTimeout = 8000
+        c.readTimeout = 12000
+        c.requestMethod = method
+        c.setRequestProperty("Accept", "*/*")
+        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11) NetAverHiLink/2.0")
+        if (body != null) {
+            val b = body.toByteArray(Charsets.UTF_8)
+            c.doOutput = true
+            c.setRequestProperty("Content-Type", "text/plain")
+            c.setRequestProperty("Content-Length", b.size.toString())
+            c.outputStream.use { it.write(b) }
+        }
+        val rc = c.responseCode
+        val stream: InputStream? = if (rc >= 400) c.errorStream else c.inputStream
+        val text = stream?.use { readAll(it) } ?: ""
+        c.disconnect()
+        if (rc >= 400) throw HilinkException("MOD", "Mod CGI HTTP $rc")
+        if (text.isEmpty()) throw HilinkException("MOD", "Mod CGI tidak menjawab")
+        return text
+    }
+
+    /** True when the Mod1.21 daemon data is actually served (band/earfcn present).
+     *  A stock firmware 404 page contains neither tag, so it never false-positives. */
+    @Synchronized
+    fun modDetected(): Boolean {
+        return try {
+            val raw = addParam()["__raw"] ?: ""
+            raw.contains("<band>") || raw.contains("<earfcn")
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Raw modsettings JSON (cmd=get). Callers parse the fields they need. */
+    @Synchronized
+    fun modGet(): String = modHttp("GET", "/cgi-bin/modsettings.cgi?cmd=get", null)
+
+    /** Current WebUI TTL value, or null when unset/absent (modem treats 0 as off). */
+    fun modTtl(): String? {
+        val json = modGet()
+        if (json.contains("\"error\"")) return null
+        return Regex("\"fix_ttl\"\\s*:\\s*\"([^\"]*)\"").find(json)
+            ?.groupValues?.get(1)?.takeIf { it.isNotEmpty() }
+    }
+
+    /** Set the WebUI TTL value. Digits are passed through as-is; the modem
+     *  side handles its 1-means-64 convention. HiLink sets the WebUI value
+     *  only — no firmware-store endpoint is invented here. */
+    @Synchronized
+    fun modSetTtl(value: String) {
+        val r = modHttp("POST", "/cgi-bin/modsettings.cgi?cmd=set&mod=fix_ttl", value)
+        if (r.contains("\"error\"")) {
+            val code = Regex("\"code\"\\s*:\\s*\"([^\"]*)\"").find(r)?.groupValues?.get(1) ?: "?"
+            throw HilinkException("MOD", "TTL tidak tersimpan (kode $code)")
+        }
+    }
+
+    /** Live user_config.xml (throws MODCFG with the CGI code when absent, e.g. 4). */
+    @Synchronized
+    fun modUserConfig(): String {
+        val xml = modHttp("GET", "/cgi-bin/user_config.cgi?cmd=get_config", null)
+        if (xml.contains("<error>")) {
+            val code = Regex("<code>([^<]*)</code>").find(xml)?.groupValues?.get(1) ?: "?"
+            throw HilinkException("MODCFG", code)
+        }
+        return xml
+    }
+
+    /** Save a full user_config.xml back to the modem. */
+    @Synchronized
+    fun modUserConfigSave(xml: String) {
+        val r = modHttp("POST", "/cgi-bin/user_config.cgi?cmd=save_config", xml)
+        if (!r.contains("<response>OK</response>")) {
+            throw HilinkException("MOD", "Konfigurasi mod tidak tersimpan")
+        }
+    }
+
+    /** Set the modem IMEI via the mod settings endpoint (digits body, as the panel sends). */
+    @Synchronized
+    fun modSetImei(newImei: String) {
+        val r = modHttp("POST", "/cgi-bin/modsettings.cgi?cmd=set&mod=imei", newImei)
+        if (r.contains("\"error\"")) {
+            val code = Regex("\"code\"\\s*:\\s*\"([^\"]*)\"").find(r)?.groupValues?.get(1) ?: "?"
+            throw HilinkException("MOD", "IMEI tidak tersimpan (kode $code)")
+        }
+    }
+
+    /** Ask the modem to reset (panel cmd=apply). The CGI answers OK before
+     *  sending the reset, so a dropped connection here still means the reset
+     *  started — callers must poll for the modem's return instead of failing. */
+    @Synchronized
+    fun modApply() {
+        try {
+            modHttp("GET", "/cgi-bin/modsettings.cgi?cmd=apply", null)
+        } catch (e: Exception) {
+            // Reset may have cut the response; polling decides the outcome.
+        }
+    }
 
     /** Raw /api/device/signal map with NO fallback chain — for the 1-second pointing poll. */
     fun signalLight(): Map<String, String> = try { authed("GET", "/api/device/signal", null) } catch (e: Exception) { try { pubGet("/api/device/signal") } catch (e2: Exception) { emptyMap() } }

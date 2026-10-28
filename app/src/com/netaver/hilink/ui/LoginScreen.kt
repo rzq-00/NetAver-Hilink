@@ -116,8 +116,11 @@ class LoginScreen(private val act: MainActivity) : Screen {
 
         val webui = Ui.button(ctx, "BUKA WEBUI ROUTER")
         webui.setOnClickListener {
-            val ip = act.app().prefs.routerIp
-            act.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://$ip")))
+            when (val g = LanGuard.check(act.app().prefs.routerIp)) {
+                is LanGuard.Result.Ok ->
+                    act.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://" + g.host)))
+                is LanGuard.Result.Bad -> Ui.toast(act, g.reason)
+            }
         }
         root.addView(webui)
 
