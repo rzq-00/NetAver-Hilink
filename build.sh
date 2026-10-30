@@ -11,7 +11,7 @@ AJAR=$SDK/platforms/android-34/android.jar
 KOTLINC=~/kotlin/kotlinc/bin/kotlinc
 STDLIB=~/kotlin/kotlinc/lib/kotlin-stdlib.jar
 KS=$APP/../debug.keystore
-APKNAME="NetAverHiLink-v2.3.1.apk"
+APKNAME="NetAverHiLink-v2.5.0.apk"
 EXPECT_CERT="<CERT_SHA256_KEYSTORE_SENDIRI>"
 
 export JAVA_HOME=~/jdk17

@@ -86,9 +86,40 @@ class LoginScreen(private val act: MainActivity) : Screen {
             width = 0; weight = 1f; topMargin = Ui.dp(ctx, 12)
         }
         loginBtn.setOnClickListener {
-            Bg.run({ act.app().client().login(true); act.app().client().loginAtMs }) { r ->
-                r.onSuccess { renderSession() }
-                r.onFailure { Ui.toast(ctx, "Login gagal: ${it.message}"); renderSession() }
+            Ui.toast(ctx, "Login via WebView (seperti browser)…")
+            // vc57: try hidden-WebView browser login first; fallback to API login.
+            try {
+                val host = act.app().prefs.routerIp.trim()
+                val pw = act.app().prefs.password()
+                com.netaver.hilink.net.WebViewLogin.login(act, host, pw) { r ->
+                    r.onSuccess { sid ->
+                        Bg.run({
+                            act.app().client().loginWithWebViewSession(sid)
+                            act.app().client().loginAtMs
+                        }) { r2 ->
+                            r2.onSuccess { Ui.toast(ctx, "Login berhasil (via WebView)"); renderSession() }
+                            r2.onFailure {
+                                // WebView cookie didn't take: fallback to API login.
+                                Bg.run({ act.app().client().login(true); act.app().client().loginAtMs }) { r3 ->
+                                    r3.onSuccess { Ui.toast(ctx, "Login berhasil (via API)"); renderSession() }
+                                    r3.onFailure { Ui.toast(ctx, "Login gagal: ${it.message}"); renderSession() }
+                                }
+                            }
+                        }
+                    }
+                    r.onFailure {
+                        // WebView failed: fallback to API login.
+                        Bg.run({ act.app().client().login(true); act.app().client().loginAtMs }) { r2 ->
+                            r2.onSuccess { Ui.toast(ctx, "Login berhasil (via API)"); renderSession() }
+                            r2.onFailure { Ui.toast(ctx, "Login gagal: ${it.message}"); renderSession() }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Bg.run({ act.app().client().login(true); act.app().client().loginAtMs }) { r ->
+                    r.onSuccess { renderSession() }
+                    r.onFailure { Ui.toast(ctx, "Login gagal: ${it.message}"); renderSession() }
+                }
             }
         }
         loginRow.addView(loginBtn)

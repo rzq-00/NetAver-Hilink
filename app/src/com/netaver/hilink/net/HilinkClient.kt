@@ -58,7 +58,12 @@ class HilinkClient(
 
     private val base = "http://$host"
     private var sessionId = ""
-    private var token = ""
+    /** WebUI Mod1.21 token model: __RequestVerificationToken is SINGLE-USE.
+     *  The WebUI keeps a queue — each POST consumes one token; new tokens are
+     *  harvested from EVERY response's headers (__RequestVerificationToken /
+     *  __RequestVerificationTokenone / __RequestVerificationTokentwo); if the
+     *  queue is empty it waits instead of POSTing without a token. */
+    private val tokenQueue: ArrayDeque<String> = ArrayDeque()
     @Volatile var loggedIn = false; private set
     @Volatile var loginAtMs = 0L; private set
     private var lockoutUntilMs = 0L
@@ -70,11 +75,56 @@ class HilinkClient(
     var scheme = initialScheme; private set
     var onSchemeLearned: ((Int) -> Unit)? = null
 
+    // ---------------- single-use token queue (cara WebUI Mod1.21) ----------------
+
+    @Synchronized
+    private fun peekToken(): String? = tokenQueue.firstOrNull()
+
+    @Synchronized
+    private fun hasTokens(): Boolean = tokenQueue.isNotEmpty()
+
+    @Synchronized
+    private fun enqueueToken(t: String) {
+        if (t.isNotEmpty() && t !in tokenQueue) tokenQueue.addLast(t)
+    }
+
+    @Synchronized
+    private fun clearTokens() = tokenQueue.clear()
+
+    /** Harvest tokens from EVERY response's headers (WebUI: ...Token / ...Tokenone / ...Tokentwo). */
+    @Synchronized
+    private fun harvestTokens(c: HttpURLConnection) {
+        val want = listOf("__RequestVerificationToken", "__RequestVerificationTokenone", "__RequestVerificationTokentwo")
+        for ((k, vals) in c.headerFields) {
+            if (k != null && want.any { it.equals(k, ignoreCase = true) }) {
+                vals?.forEach { t -> if (t.isNotEmpty() && t !in tokenQueue) tokenQueue.addLast(t) }
+            }
+        }
+    }
+
+    /**
+     * Consume one token for a POST. Refills via SesTokInfo when the queue is empty
+     * (peek-only GET, no recursion: rawInner with consume=false).
+     * Must be called with the monitor held (raw() is @Synchronized; reentrant).
+     */
+    private fun takeToken(): String {
+        tokenQueue.removeFirstOrNull()?.let { return it }
+        val m = try { rawInner("GET", "/api/webserver/SesTokInfo", null, consumeToken = false) }
+            catch (e: Exception) { emptyMap<String, String>() }
+        val tok = m["TokInfo"] ?: ""
+        if (tok.isNotEmpty()) return tok
+        val m2 = try { rawInner("GET", "/api/webserver/token", null, consumeToken = false) }
+            catch (e: Exception) { emptyMap<String, String>() }
+        val tok2 = m2["token"] ?: m2["TokInfo"] ?: ""
+        if (tok2.isNotEmpty()) return tok2
+        throw HilinkException("TOKEN", "Tidak ada token tersedia untuk POST")
+    }
+
     // ---------------- session ----------------
 
     @Synchronized
     fun ensureSession() {
-        if (loggedIn && token.isNotEmpty()) return
+        if (loggedIn && hasTokens()) return
         loginLocked(manual = false)
     }
 
@@ -154,7 +204,8 @@ class HilinkClient(
 
     private fun attemptLogin(sch: Int) {
         fetchSesTok() // fresh token + fresh cookies for EVERY attempt (tokens can be single-use)
-        val finalHash = if (sch == 4) com.netaver.hilink.core.HashKit.scheme4(username, password, token)
+        val hashTok = peekToken() ?: ""
+        val finalHash = if (sch == 4) com.netaver.hilink.core.HashKit.scheme4(username, password, hashTok)
             else com.netaver.hilink.core.HashKit.inner(password)
         val body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><request>" +
             "<Username>" + esc(username) + "</Username>" +
@@ -167,13 +218,41 @@ class HilinkClient(
         val ses = r["SesInfo"]
         if (!ses.isNullOrEmpty()) sessionId = if (ses.startsWith("SessionID=")) ses.substring(10) else ses
         val tok = r["TokInfo"]
-        if (!tok.isNullOrEmpty()) token = tok
+        if (!tok.isNullOrEmpty()) { clearTokens(); enqueueToken(tok) }
     }
 
     @Synchronized
     fun logout() {
         try { raw("POST", "/api/user/logout", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><request></request>") } catch (e: Exception) { }
-        sessionId = ""; token = ""; loggedIn = false
+        sessionId = ""; clearTokens(); loggedIn = false
+    }
+
+    /**
+     * Adopt a SessionID obtained via hidden-WebView browser login (vc57).
+     * Skips the /api/user/login POST entirely; tokens are harvested from the
+     * next responses like the WebUI does. Throws if the session is rejected.
+     */
+    @Synchronized
+    fun loginWithWebViewSession(sid: String) {
+        val wvSid = sid.trim()
+        if (wvSid.isEmpty()) throw HilinkException("LOGIN", "SessionID WebView kosong")
+        sessionId = wvSid
+        clearTokens()
+        // Validate the session + harvest fresh tokens from response headers
+        // (raw() auto-harvests __RequestVerificationToken* from every response).
+        val st = try { raw("GET", "/api/user/state-login", null) }
+        catch (e: Exception) { throw HilinkException("LOGIN", "Sesi WebView ditolak router: ${e.message}") }
+        val ls = st["LoginState"] ?: st["loginState"] ?: ""
+        if (ls == "0") throw HilinkException("LOGIN", "Sesi WebView tidak diterima (LoginState=0)")
+        // One more GET to make sure the token queue is primed (WebUI harvests
+        // a fresh token from every response; tokens are single-use).
+        try { raw("GET", "/api/webserver/SesTokInfo", null) } catch (e: Exception) { }
+        // Keep the WebView cookie as our session (SesTokInfo may return a
+        // handshake-only SesInfo; the browser cookie is the proven one).
+        sessionId = wvSid
+        loggedIn = true
+        loginAtMs = System.currentTimeMillis()
+        failStreak = 0; lastFailMs = 0; lastFailMsg = ""
     }
 
     /** Reachability + login requirements WITHOUT spending a password attempt. */
@@ -183,7 +262,7 @@ class HilinkClient(
             fetchSesTok()
             val st = raw("GET", "/api/user/state-login", null)
             Reach(true, st["LoginState"] ?: "", st["password_type"]?.toIntOrNull() ?: 4,
-                if (token.isNotEmpty() || sessionId.isNotEmpty()) "Router menjawab, token sesi didapat." else "Router menjawab.")
+                if (hasTokens() || sessionId.isNotEmpty()) "Router menjawab, token sesi didapat." else "Router menjawab.")
         } catch (e: Exception) {
             Reach(false, "", 4, "Tidak terjangkau: ${e.message}")
         }
@@ -194,12 +273,14 @@ class HilinkClient(
         val ses = m["SesInfo"]
         if (!ses.isNullOrEmpty()) sessionId = if (ses.startsWith("SessionID=")) ses.substring(10) else ses
         val tok = m["TokInfo"]
-        if (!tok.isNullOrEmpty()) token = tok
-        if (token.isEmpty()) { // modded WebUI fallback
+        // fresh session = fresh token queue (tokens are single-use)
+        clearTokens()
+        if (!tok.isNullOrEmpty()) enqueueToken(tok)
+        if (!hasTokens()) { // modded WebUI fallback
             try {
                 val t = raw("GET", "/api/webserver/token", null)
                 val tv = t["token"] ?: t["TokInfo"]
-                if (!tv.isNullOrEmpty()) token = tv
+                if (!tv.isNullOrEmpty()) enqueueToken(tv)
             } catch (e: Exception) { }
         }
     }
@@ -230,28 +311,46 @@ class HilinkClient(
 
     @Synchronized
     private fun raw(method: String, path: String, body: String?): Map<String, String> {
+        // POST consumes one single-use token (WebUI model); GET only peeks.
+        return rawInner(method, path, body, consumeToken = (body != null))
+    }
+
+    /** consumeToken=true: take (consume) one token for a POST; false: peek for a GET. */
+    private fun rawInner(method: String, path: String, body: String?, consumeToken: Boolean): Map<String, String> {
+        // NOTE: caller must hold the monitor (raw() is @Synchronized; takeToken's
+        // refill GET re-enters via rawInner directly, no deadlock — synchronized is reentrant).
+        val tok: String? = if (consumeToken) takeToken() else peekToken()
         val c = URL(base + path).openConnection() as HttpURLConnection
         c.connectTimeout = 8000
         c.readTimeout = 12000
         c.requestMethod = method
         c.setRequestProperty("Accept", "*/*")
         c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11) NetAverHiLink/2.0")
+        // vc52: tiru browser — WebUI selalu kirim Referer/Origin.
+        c.setRequestProperty("Referer", "http://$host/html/wlanadvanced.html")
+        c.setRequestProperty("Origin", "http://$host")
+        // vc51: matikan keep-alive (mencegah socket basi) — WebUI tidak reuse koneksi agresif.
+        c.setRequestProperty("Connection", "close")
         val cookieParts = LinkedHashMap<String, String>()
         for ((k, v) in cookieJar) cookieParts[k] = v
         if (sessionId.isNotEmpty() && !cookieParts.containsKey("SessionID")) cookieParts["SessionID"] = sessionId
         if (cookieParts.isNotEmpty()) {
             c.setRequestProperty("Cookie", cookieParts.entries.joinToString("; ") { "${it.key}=${it.value}" })
         }
-        if (token.isNotEmpty()) c.setRequestProperty("__RequestVerificationToken", token)
-        // modded WebUIs sometimes issue a fresh token per response header
+        if (tok != null) c.setRequestProperty("__RequestVerificationToken", tok)
         if (body != null) {
             val b = body.toByteArray(Charsets.UTF_8)
             c.doOutput = true
-            c.setRequestProperty("Content-Type", "text/xml")
+            // vc51: samakan header POST persis dengan WebUI (jQuery): XML mentah
+            // dikirim dengan Content-Type form + header XHR.
+            c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+            c.setRequestProperty("X-Requested-With", "XMLHttpRequest")
             c.setRequestProperty("Content-Length", b.size.toString())
             c.outputStream.use { it.write(b) }
         }
         val rc = c.responseCode
+        // harvest single-use tokens from EVERY response (WebUI model) before reading the body
+        harvestTokens(c)
         // harvest cookies (modded WebUIs bind the token to a cookie session)
         for ((hk, values) in c.headerFields) {
             if (hk != null && hk.equals("Set-Cookie", ignoreCase = true)) {
@@ -264,8 +363,6 @@ class HilinkClient(
             }
         }
         cookieJar["SessionID"]?.let { if (it.isNotEmpty()) sessionId = it }
-        val newTok = c.getHeaderField("__RequestVerificationToken")
-        if (!newTok.isNullOrEmpty()) token = newTok
         val stream: InputStream? = if (rc >= 400) c.errorStream else c.inputStream
         val xml = stream?.use { readAll(it) } ?: ""
         c.disconnect()
@@ -337,6 +434,9 @@ class HilinkClient(
         c.requestMethod = method
         c.setRequestProperty("Accept", "*/*")
         c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11) NetAverHiLink/2.0")
+        // vc52: tiru browser.
+        c.setRequestProperty("Referer", "http://$host/html/wlanadvanced.html")
+        c.setRequestProperty("Origin", "http://$host")
         if (body != null) {
             val b = body.toByteArray(Charsets.UTF_8)
             c.doOutput = true
@@ -605,7 +705,9 @@ class HilinkClient(
             "<WifiSsid>" + esc(ssid) + "</WifiSsid>" +
             "<WifiHide>" + hide.toString() + "</WifiHide>"
         if (enable.isNotEmpty()) body += "<WifiEnable>" + esc(enable) + "</WifiEnable>"
-        body += "<WifiRestart>1</WifiRestart></request>"
+        // WifiRestart SELALU 0 di sini (cara WebUI wlanbasicsettings.js):
+        // restart hanya sekali, di POST channel terakhir (multi-security).
+        body += "<WifiRestart>0</WifiRestart></request>"
         authed("POST", "/api/wlan/basic-settings", body)
     }
 
@@ -632,6 +734,16 @@ class HilinkClient(
     /** Post the full profile array back (read-modify-write, WebUI-style). */
     fun setWlanMultiBasic(requestBody: String) {
         authed("POST", "/api/wlan/multi-basic-settings", requestBody)
+    }
+
+    /** Advanced radio settings (channel/bandwidth/mode) on multi-SSID firmware:
+     *  the WebUI's wlanadvanced page READS and WRITES these here —
+     *  basic-settings' copies are ignored by the radio for these fields. */
+    fun wlanMultiSecRaw(): String = authed("GET", "/api/wlan/multi-security-settings", null)["__raw"] ?: ""
+
+    /** Post a full read-modify-write multi-security-settings body (WebUI-style). */
+    fun setWlanMultiSecRaw(requestBody: String) {
+        authed("POST", "/api/wlan/multi-security-settings", requestBody)
     }
 
     // ---------------- Router settings: DHCP ----------------
@@ -750,6 +862,10 @@ class HilinkClient(
             c.requestMethod = method
             c.setRequestProperty("Accept", "*/*")
             c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11) NetAverHiLink/2.0")
+            c.setRequestProperty("Connection", "close")
+            // vc52: tiru browser.
+            c.setRequestProperty("Referer", "http://$host/html/wlanadvanced.html")
+            c.setRequestProperty("Origin", "http://$host")
             if (useJar) {
                 val parts = LinkedHashMap<String, String>()
                 for ((k, v2) in cookieJar) parts[k] = v2
@@ -783,17 +899,18 @@ class HilinkClient(
     fun signalVariants(): List<Pair<String, String>> {
         val referer = mapOf("Referer" to "http://$host/html/deviceinformation.html", "Origin" to "http://$host")
         val xhr = referer + ("X-Requested-With" to "XMLHttpRequest")
-        val freshTok = try { fetchSesTok(); token } catch (e: Exception) { token }
+        val freshTok = try { fetchSesTok(); peekToken() ?: "" } catch (e: Exception) { peekToken() ?: "" }
+        val curTok = peekToken()
         val emptyReq = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><request></request>"
         return listOf(
-            "kontrol: GET sesi saat ini" to rawX("GET", "/api/device/signal", null, emptyMap(), true, token),
-            "GET + Referer WebUI" to rawX("GET", "/api/device/signal", null, referer, true, token),
-            "GET + Referer + XHR" to rawX("GET", "/api/device/signal", null, xhr, true, token),
-            "POST kosong + Referer" to rawX("POST", "/api/device/signal", emptyReq, referer, true, token),
+            "kontrol: GET sesi saat ini" to rawX("GET", "/api/device/signal", null, emptyMap(), true, curTok),
+            "GET + Referer WebUI" to rawX("GET", "/api/device/signal", null, referer, true, curTok),
+            "GET + Referer + XHR" to rawX("GET", "/api/device/signal", null, xhr, true, curTok),
+            "POST kosong + Referer" to rawX("POST", "/api/device/signal", emptyReq, referer, true, curTok),
             "GET polos tanpa sesi" to rawX("GET", "/api/device/signal", null, emptyMap(), false, null),
             "GET token segar saja (gaya eyade)" to rawX("GET", "/api/device/signal", null, emptyMap(), false, freshTok),
-            "GET cell-info + Referer" to rawX("GET", "/api/net/cell-info", null, referer, true, token),
-            "POST cell-info + Referer" to rawX("POST", "/api/net/cell-info", emptyReq, referer, true, token)
+            "GET cell-info + Referer" to rawX("GET", "/api/net/cell-info", null, referer, true, curTok),
+            "POST cell-info + Referer" to rawX("POST", "/api/net/cell-info", emptyReq, referer, true, curTok)
         )
     }
 
@@ -807,11 +924,14 @@ class HilinkClient(
             c.requestMethod = "GET"
             c.setRequestProperty("Accept", "*/*")
             c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11) NetAverHiLink/2.0")
+            // vc52: tiru browser.
+            c.setRequestProperty("Referer", "http://$host/html/wlanadvanced.html")
+            c.setRequestProperty("Origin", "http://$host")
             val parts = LinkedHashMap<String, String>()
             for ((k, v2) in cookieJar) parts[k] = v2
             if (sessionId.isNotEmpty() && !parts.containsKey("SessionID")) parts["SessionID"] = sessionId
             if (parts.isNotEmpty()) c.setRequestProperty("Cookie", parts.entries.joinToString("; ") { "${it.key}=${it.value}" })
-            if (token.isNotEmpty()) c.setRequestProperty("__RequestVerificationToken", token)
+            peekToken()?.let { c.setRequestProperty("__RequestVerificationToken", it) }
             val rc = c.responseCode
             val stream: InputStream? = if (rc >= 400) c.errorStream else c.inputStream
             val text = stream?.use { readAll(it) } ?: ""

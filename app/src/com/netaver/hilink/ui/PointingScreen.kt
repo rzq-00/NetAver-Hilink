@@ -80,17 +80,20 @@ class PointingScreen(private val act: MainActivity) : Screen {
         hero.setPadding(0, Ui.dp(ctx, 18), 0, 0)
         ratTv = Ui.text(ctx, "—", 32f, Color.rgb(41, 182, 246), true)
         ratTv.setTypeface(Typeface.DEFAULT, Typeface.BOLD_ITALIC)
-        ratTv.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        ratTv.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f)
         hero.addView(ratTv)
         val rssiBox = LinearLayout(ctx)
         rssiBox.orientation = LinearLayout.VERTICAL
-        rssiBox.gravity = Gravity.END
+        rssiBox.gravity = Gravity.CENTER_HORIZONTAL
+        rssiBox.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         val rssiLab = Ui.text(ctx, "RSSI", 12f, Color.rgb(94, 134, 184), true)
-        rssiLab.gravity = Gravity.END
+        rssiLab.gravity = Gravity.CENTER_HORIZONTAL
         rssiLab.letterSpacing = 0.25f
+        rssiLab.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         rssiBox.addView(rssiLab)
-        rssiTv = mono(ctx, "—", 28f, Color.rgb(41, 182, 246))
-        rssiTv.gravity = Gravity.END
+        rssiTv = mono(ctx, "—", 24f, Color.rgb(41, 182, 246))
+        rssiTv.gravity = Gravity.CENTER_HORIZONTAL
+        rssiTv.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         rssiBox.addView(rssiTv)
         hero.addView(rssiBox)
         root.addView(hero)
@@ -109,9 +112,13 @@ class PointingScreen(private val act: MainActivity) : Screen {
             col.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             val lab = Ui.text(ctx, slots[i], 12f, Color.rgb(94, 134, 184), true)
             lab.letterSpacing = 0.25f
+            lab.gravity = Gravity.CENTER_HORIZONTAL
+            lab.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             col.addView(lab)
-            val v = mono(ctx, "—", 30f, Ui.SUB)
+            val v = mono(ctx, "—", 24f, Ui.SUB)
             v.setPadding(0, Ui.dp(ctx, 5), 0, 0)
+            v.gravity = Gravity.CENTER_HORIZONTAL
+            v.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             col.addView(v)
             labs[i] = lab
             vals[i] = v

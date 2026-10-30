@@ -3,8 +3,10 @@ package com.netaver.hilink.ui
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -17,6 +19,9 @@ class DevicesScreen(private val act: MainActivity) : Screen {
     private lateinit var antennaBox: LinearLayout
     private lateinit var subTv: TextView
     private var loading = false
+    private var imeiRevealed = false
+    private var imeiFull = ""
+    private var imeiValueTv: TextView? = null
 
     override fun build(actA: Activity): View {
         val ctx = act
@@ -99,7 +104,7 @@ class DevicesScreen(private val act: MainActivity) : Screen {
         return scroll
     }
 
-    override fun onShow() { load() }
+    override fun onShow() { imeiRevealed = false; load() }
 
     private fun infoRow(k: String, v: String): LinearLayout {
         val ctx = act
@@ -169,12 +174,52 @@ class DevicesScreen(private val act: MainActivity) : Screen {
     }
 
     private fun renderInfo(info: com.netaver.hilink.net.HilinkClient.DeviceInfo, bootSec: Long) {
+        val ctx = act
         infoBox.removeAllViews()
         infoBox.addView(infoRow("Model", info.name.ifEmpty { "—" }))
         infoBox.addView(infoRow("Firmware", info.sw.ifEmpty { "—" }))
         infoBox.addView(infoRow("Hardware", info.hw.ifEmpty { "—" }))
-        infoBox.addView(infoRow("IMEI", if (info.imei.isEmpty()) "—" else Format.maskImei(info.imei)))
-        infoBox.addView(infoRow("Serial", if (info.serial.length > 4) "••••" + info.serial.takeLast(4) else info.serial.ifEmpty { "—" }))
+        imeiFull = info.imei
+        val imeiRow = LinearLayout(ctx)
+        imeiRow.orientation = LinearLayout.HORIZONTAL
+        imeiRow.setPadding(0, Ui.dp(ctx, 9), 0, Ui.dp(ctx, 9))
+        val imeiKt = Ui.text(ctx, "IMEI", 14f, Ui.SUB)
+        imeiKt.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        imeiRow.addView(imeiKt)
+        // Eye button: same pattern as the Ubah IMEI eye (ModWebUi), but with
+        // a dark background matching the Devices tab (BORDER, not blue BTN),
+        // and a white eye icon. No bare emoji glyph.
+        val eyeBox = LinearLayout(ctx)
+        eyeBox.orientation = LinearLayout.HORIZONTAL
+        eyeBox.background = Ui.bg(Ui.BORDER, 10, ctx)
+        eyeBox.gravity = Gravity.CENTER
+        eyeBox.layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT).apply {
+            rightMargin = Ui.dp(ctx, 8)
+        }
+        val eyeIv = ImageView(ctx)
+        eyeIv.setImageDrawable(Ui.EyeDrawable(ctx, false))
+        eyeIv.scaleType = ImageView.ScaleType.FIT_CENTER
+        // EyeDrawable paints in SUB gray; on the dark button it must be white.
+        // ImageView color filter persists across the toggle's drawable swaps.
+        eyeIv.setColorFilter(android.graphics.Color.WHITE, android.graphics.PorterDuff.Mode.SRC_IN)
+        eyeIv.setPadding(Ui.dp(ctx, 8), 0, Ui.dp(ctx, 8), 0)
+        eyeIv.layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 46), ViewGroup.LayoutParams.MATCH_PARENT)
+        eyeBox.addView(eyeIv)
+        eyeBox.setOnClickListener {
+            if (imeiFull.isEmpty()) return@setOnClickListener
+            // Drawable set from the pre-toggle value, so it equals the NEW
+            // shown state — same as ModWebUi's !curMasked.
+            eyeIv.setImageDrawable(Ui.EyeDrawable(ctx, !imeiRevealed))
+            imeiRevealed = !imeiRevealed
+            imeiValueTv?.text = if (imeiRevealed) imeiFull else Format.maskImei(imeiFull)
+        }
+        imeiRow.addView(eyeBox)
+        val imeiVal = Ui.text(ctx, if (imeiFull.isEmpty()) "—" else if (imeiRevealed) imeiFull else Format.maskImei(imeiFull), 14f, Ui.TXT, true)
+        imeiValueTv = imeiVal
+        imeiRow.addView(imeiVal)
+        infoBox.addView(imeiRow)
+        infoBox.addView(infoRow("Serial", info.serial.ifEmpty { "—" }))
         infoBox.addView(infoRow("MAC LAN", info.mac.ifEmpty { "—" }))
         infoBox.addView(infoRow("Nyala sejak", if (bootSec > 0) Format.duration(bootSec) + " lalu" else "—"))
     }

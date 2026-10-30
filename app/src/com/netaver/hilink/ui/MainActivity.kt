@@ -1,6 +1,7 @@
 package com.netaver.hilink.ui
 
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
@@ -30,9 +31,9 @@ class MainActivity : Activity() {
         const val TAB_DHCP = 7
         const val TAB_USSD = 8
         const val TAB_APN = 9
-        const val TAB_DIAG = 10
         const val TAB_POINTING = 11 // sub-screen, highlights Dashboard
         const val TAB_LOGIN = 12 // main tab (own bar slot since v2.2.0)
+        const val TAB_WIFIANALISA = 13 // router-settings sub-screen (from WiFi tab), highlights Setelan
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -80,9 +81,9 @@ class MainActivity : Activity() {
                 TAB_DHCP -> DhcpScreen(this)
                 TAB_USSD -> UssdScreen(this)
                 TAB_APN -> ApnScreen(this)
-                TAB_DIAG -> DiagScreen(this)
                 TAB_POINTING -> PointingScreen(this)
                 TAB_LOGIN -> LoginScreen(this)
+                TAB_WIFIANALISA -> WifiAnalisaScreen(this)
                 else -> DevicesScreen(this)
             }
         }
@@ -92,7 +93,7 @@ class MainActivity : Activity() {
         current = tab
         val highlightPos = when (tab) {
             TAB_LOGIN -> 1
-            TAB_SETTINGS, TAB_WIFI, TAB_DHCP, TAB_USSD, TAB_APN, TAB_DIAG -> 2 // Setelan slot
+            TAB_SETTINGS, TAB_WIFI, TAB_DHCP, TAB_USSD, TAB_APN, TAB_WIFIANALISA -> 2 // Setelan slot
             else -> 0 // Dashboard slot: Dashboard itself + Band/Mode/SMS/Devices/Pointing sub-screens
         }
         tabViews.forEachIndexed { i, t -> t.setTextColor(if (i == highlightPos) Ui.ACCENT else Ui.FAINT) }
@@ -101,7 +102,8 @@ class MainActivity : Activity() {
 
     override fun onBackPressed() {
         when {
-            current in listOf(TAB_WIFI, TAB_DHCP, TAB_USSD, TAB_APN, TAB_DIAG) -> show(TAB_SETTINGS)
+            current == TAB_WIFIANALISA -> show(TAB_WIFI)
+            current in listOf(TAB_WIFI, TAB_DHCP, TAB_USSD, TAB_APN) -> show(TAB_SETTINGS)
             current != TAB_DASHBOARD -> show(TAB_DASHBOARD)
             else -> super.onBackPressed()
         }
@@ -109,4 +111,27 @@ class MainActivity : Activity() {
 
     fun app(): com.netaver.hilink.HiLinkApp = application as com.netaver.hilink.HiLinkApp
     fun logoRes(): Int = R.drawable.logo_netaver
+
+    /** Callback untuk hasil runtime permission (tanpa AndroidX). */
+    interface PermResult {
+        fun onPermResult(requestCode: Int, granted: Boolean)
+    }
+
+    private var permHandler: PermResult? = null
+
+    fun requestPerm(perm: String, code: Int, handler: PermResult) {
+        permHandler = handler
+        requestPermissions(arrayOf(perm), code)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        val h = permHandler; permHandler = null
+        h?.onPermResult(requestCode,
+            grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)
+    }
+
+    fun wifiScreen(): WifiScreen? = screens[TAB_WIFI] as? WifiScreen
 }

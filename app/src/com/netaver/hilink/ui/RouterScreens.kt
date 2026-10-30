@@ -1,8 +1,11 @@
 package com.netaver.hilink.ui
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.graphics.Color
+import android.graphics.Typeface
 import android.text.InputType
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
@@ -115,6 +118,26 @@ private fun patchXmlField(block: String, name: String, value: String): String {
     return block.substring(0, a + open.length) + HilinkClient.esc(value) + block.substring(b)
 }
 
+/** Decode HTML entities yang dipakai beberapa endpoint (multi-security-settings
+ *  mengirim "b&#x2F;g&#x2F;n" untuk "b/g/n"). &amp; didekode TERAKHIR agar tidak
+ *  double-decode. */
+private fun htmlDecode(s: String): String {
+    var r = s
+    r = Regex("&#([0-9]+);").replace(r) { m ->
+        m.groupValues[1].toIntOrNull()?.let { n ->
+            if (n in 0..0x10FFFF) String(Character.toChars(n)) else m.value
+        } ?: m.value
+    }
+    r = Regex("&#[xX]([0-9a-fA-F]+);").replace(r) { m ->
+        m.groupValues[1].toIntOrNull(16)?.let { n ->
+            if (n in 0..0x10FFFF) String(Character.toChars(n)) else m.value
+        } ?: m.value
+    }
+    r = r.replace("&quot;", "\"").replace("&lt;", "<").replace("&gt;", ">")
+    r = r.replace("&amp;", "&")
+    return r
+}
+
 /** Single-select chip grid that wraps into rows of [perRow]; for long lists (channels). */
 private class ChipGrid(
     private val act: MainActivity,
@@ -191,6 +214,12 @@ class WifiScreen(private val act: MainActivity) : Screen {
     private lateinit var advBox: LinearLayout
     private var origAuth = ""
     private var enableKnown = ""
+    /** Nilai SSID/hide/enable apa adanya saat dimuat — untuk melewati POST
+     *  basic-settings bila tidak ada yang berubah (WebUI tidak pernah
+     *  mengirimnya di halaman Advanced). */
+    private var origSsid = ""
+    private var origHide = false
+    private var origEnable = ""
 
     // ---- WLAN advanced (multi-basic-settings), mirrors the WebUI wlanadvanced page ----
     private var advReady = false
@@ -208,6 +237,26 @@ class WifiScreen(private val act: MainActivity) : Screen {
     private var modeRow5: ChipRow? = null
     private var chanVals5: List<String> = emptyList()
     private var modeVals5: List<String> = emptyList()
+
+    /** true bila channel/bw/mode dikendalikan via multi-security-settings
+     *  (firmware multi-SSID — di situlah WebUI wlanadvanced membaca/menulis;
+     *  basic-settings diabaikan radio untuk field-field ini). */
+    private var useMultiSec = false
+    private var msRaw: String = ""
+
+    /** SSID yang sedang diketik/dimuat di tab ini (tanpa tanda kutip) — dipakai
+     *  layar Analisa Channel untuk mengecualikan SSID router sendiri. */
+    fun currentSsid(): String =
+        if (::ssidIn.isInitialized) ssidIn.text.toString().trim().removeSurrounding("\"") else ""
+
+    /** Pilih channel 2.4 GHz dari layar lain (tombol "Pakai channel N"). */
+    fun selectChannel24(n: Int): Boolean {
+        val g = gridChan24 ?: return false
+        val i = chanVals24.indexOf(n.toString())
+        if (i < 0) return false
+        g.select(i)
+        return true
+    }
 
     override fun build(actA: Activity): View {
         val ctx = act
@@ -245,26 +294,40 @@ class WifiScreen(private val act: MainActivity) : Screen {
     private fun loadAdvanced() {
         Bg.run({
             val c = act.app().client()
-            Pair(c.wlanBasic(), c.wlanMultiBasicRaw())
+            val basic = c.wlanBasic()
+            val blocks = HilinkClient.blocks(c.wlanMultiBasicRaw(), "Ssid")
+            // Firmware multi-SSID: nilai radio (channel/bw/mode) dibaca dari
+            // multi-security-settings — di situlah WebUI wlanadvanced membaca
+            // dan menulis (terbukti dari wlanadvanced.js firmware).
+            val ms = if (blocks.isNotEmpty()) {
+                try { c.wlanMultiSecRaw().takeIf { it.contains("<WifiChannel>") } ?: "" }
+                catch (e: Exception) { "" }
+            } else ""
+            Triple(basic, blocks, ms)
         }) { r ->
-            r.onSuccess { (basic, raw) ->
-                val blocks = HilinkClient.blocks(raw, "Ssid")
+            r.onSuccess { (basic, blocks, ms) ->
+                useMultiSec = ms.isNotEmpty()
+                msRaw = ms
                 advBlocks = blocks
                 advIs5g = blocks.map { is5gMode(xmlField(it, "WifiMode")) }
-                // The values that actually drive the radio (channel, bandwidth,
-                // mode, isolation of the primary profile) live in basic-settings:
-                // that is where the WebUI's advanced page reads them (verified in
-                // its wlanadvanced.js). The multi-basic per-profile copies sit at
-                // 0/auto on this firmware, which is why v2.3.0 showed "Otomatis"
-                // while the router was really on ch 11 / 40 MHz.
+                // Jalur lama (firmware single-SSID): nilai radio di basic-settings.
+                // Jalur multi-SSID: basic-settings diabaikan radio untuk
+                // channel/bw/mode — yang dipakai multi-security-settings.
                 basicAdvReady = basic.keys.any { it.equals("WifiChannel", true) }
                 if (basicAdvReady) {
                     val bMode = HilinkClient.ci(basic, "WifiMode")
                     basicIs5g = is5gMode(bMode)
                     isolateSw.isChecked = HilinkClient.ci(basic, "WifiIsolate") == "1"
-                    buildBandSection(basicIs5g,
-                        HilinkClient.ci(basic, "WifiChannel").ifEmpty { "0" },
-                        HilinkClient.ci(basic, "wifibandwidth"), bMode)
+                    if (useMultiSec) {
+                        buildBandSection(basicIs5g,
+                            htmlDecode(xmlField(msRaw, "WifiChannel")).ifEmpty { "0" },
+                            htmlDecode(xmlField(msRaw, "wifibandwidth")),
+                            htmlDecode(xmlField(msRaw, "WifiMode")).ifEmpty { bMode })
+                    } else {
+                        buildBandSection(basicIs5g,
+                            HilinkClient.ci(basic, "WifiChannel").ifEmpty { "0" },
+                            HilinkClient.ci(basic, "wifibandwidth"), bMode)
+                    }
                     val other = !basicIs5g
                     if (advIs5g.any { it == other }) {
                         val ob = advBlocks[advIs5g.indexOf(other)]
@@ -276,9 +339,16 @@ class WifiScreen(private val act: MainActivity) : Screen {
                 } else if (blocks.isNotEmpty()) {
                     isolateSw.isChecked = xmlField(blocks[0], "WifiIsolate") == "1"
                     if (advIs5g.any { !it }) {
-                        val b0 = advBlocks[advIs5g.indexOf(false)]
-                        buildBandSection(false, xmlField(b0, "WifiChannel").ifEmpty { "0" },
-                            xmlField(b0, "wifibandwidth"), xmlField(b0, "WifiMode"))
+                        if (useMultiSec) {
+                            buildBandSection(false,
+                                htmlDecode(xmlField(msRaw, "WifiChannel")).ifEmpty { "0" },
+                                htmlDecode(xmlField(msRaw, "wifibandwidth")),
+                                htmlDecode(xmlField(msRaw, "WifiMode")))
+                        } else {
+                            val b0 = advBlocks[advIs5g.indexOf(false)]
+                            buildBandSection(false, xmlField(b0, "WifiChannel").ifEmpty { "0" },
+                                xmlField(b0, "wifibandwidth"), xmlField(b0, "WifiMode"))
+                        }
                     }
                     if (advIs5g.any { it }) {
                         val b1 = advBlocks[advIs5g.indexOf(true)]
@@ -325,7 +395,30 @@ class WifiScreen(private val act: MainActivity) : Screen {
         } else {
             gridChan24 = grid; bwRow24 = bwRow; modeRow24 = modeRow
             chanVals24 = chanVals; modeVals24 = modeVals
+            advBox.addView(analisaRow(act))
         }
+    }
+
+    /** Baris pembuka layar Analisa Channel — di bawah channel chips 2.4 GHz. */
+    private fun analisaRow(act: MainActivity): View {
+        val row = LinearLayout(act); row.orientation = LinearLayout.HORIZONTAL
+        row.background = Ui.bg(Ui.CARD, 14, act, Ui.BORDER)
+        row.setPadding(Ui.dp(act, 16), Ui.dp(act, 14), Ui.dp(act, 16), Ui.dp(act, 14))
+        val lp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        lp.topMargin = Ui.dp(act, 12)
+        row.layoutParams = lp
+        val tt = LinearLayout(act); tt.orientation = LinearLayout.VERTICAL
+        tt.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        tt.addView(Ui.text(act, "Analisa Channel Sekitar", 16f, Ui.TXT, true))
+        tt.addView(Ui.text(act, "Pindai jaringan sekitar dari WiFi HP", 12.5f, Ui.SUB))
+        row.addView(tt)
+        val ch = Ui.text(act, "›", 26f, Ui.SUB, true)
+        ch.gravity = Gravity.CENTER_VERTICAL
+        row.addView(ch)
+        row.isClickable = true; row.isFocusable = true
+        row.setOnClickListener { act.show(MainActivity.TAB_WIFIANALISA) }
+        return row
     }
 
     /** Full basic-settings body (WebUI-style read-modify-write): the router's own
@@ -355,6 +448,27 @@ class WifiScreen(private val act: MainActivity) : Screen {
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + body
     }
 
+    /** Read-modify-write multi-security-settings (cara WebUI wlanadvanced):
+     *  channel/bandwidth/mode + WifiRestart; field lain byte-identik. */
+    private fun buildMultiSecBody(c: HilinkClient, adv: List<String>): String {
+        val raw = c.wlanMultiSecRaw()
+        val start = raw.indexOf("<response>")
+        if (start < 0) throw IllegalStateException("multi-security-settings tidak terbaca")
+        var body = raw.substring(start)
+            .replaceFirst("<response>", "<request>")
+            .replace("</response>", "</request>")
+        val end = body.indexOf("</request>")
+        if (end >= 0) body = body.substring(0, end + "</request>".length)
+        if (adv[0].isNotEmpty()) body = patchXmlField(body, "WifiChannel", adv[0])
+        if (adv[1].isNotEmpty()) body = patchXmlField(body, "wifibandwidth", adv[1])
+        if (adv[2].isNotEmpty()) body = patchXmlField(body, "WifiMode", adv[2])
+        body = if (body.contains("<WifiRestart>")) patchXmlField(body, "WifiRestart", "1")
+            else body.replace("</request>", "<WifiRestart>1</WifiRestart></request>")
+        // vc52: samakan dengan output object2xml WebUI — satu baris, tanpa newline.
+        body = body.replace("\n", "").replace("\r", "")
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + body
+    }
+
     /** Full multi-basic body: the router's own profile blocks with only the advanced
      *  fields (and the shared isolation switch) patched — everything else byte-identical. */
     private fun buildAdvancedBody(): String {
@@ -371,7 +485,9 @@ class WifiScreen(private val act: MainActivity) : Screen {
                 modeRow24?.let { b = patchXmlField(b, "WifiMode", modeVals24[it.sel]) }
             }
             b = patchXmlField(b, "WifiIsolate", if (isolateSw.isChecked) "1" else "0")
-            if (b.contains("<WifiRestart>")) b = patchXmlField(b, "WifiRestart", "1")
+            // WebUI: multi-basic TIDAK me-restart (WifiRestart: 0) — restart
+            // hanya sekali di POST multi-security terakhir.
+            if (b.contains("<WifiRestart>")) b = patchXmlField(b, "WifiRestart", "0")
             sb.append(b)
         }
         sb.append("</Ssids></request>")
@@ -387,6 +503,9 @@ class WifiScreen(private val act: MainActivity) : Screen {
                 hideSw.isChecked = hide == "1" || hide.equals("true", true)
                 enableKnown = HilinkClient.ci(basic, "WifiEnable")
                 enableSw.isChecked = enableKnown != "0"
+                origSsid = ssidIn.text.toString().trim()
+                origHide = hideSw.isChecked
+                origEnable = enableKnown
                 origAuth = HilinkClient.ci(sec, "WifiAuthmode")
                 authRow.select(when {
                     origAuth.contains("WPA2") && !origAuth.contains("WPA/") -> 0
@@ -409,8 +528,9 @@ class WifiScreen(private val act: MainActivity) : Screen {
         if (authRow.sel < 2 && pskIn.text.isNotEmpty() && pskIn.text.length < 8) {
             Ui.toast(act, "Password WiFi minimal 8 karakter"); return
         }
+        val chSend = gridChan24?.let { chanVals24[it.sel] } ?: "?"
         Ui.confirm(act, "Terapkan pengaturan WiFi?",
-            "Router akan me-restart WiFi-nya. HP kamu terputus sebentar — sambungkan ulang ke \"$ssid\" setelahnya.",
+            "Router akan me-restart WiFi-nya. HP kamu terputus sebentar — sambungkan ulang ke \"$ssid\" setelahnya.\n\nChannel 2.4 GHz yang akan dikirim: $chSend",
             "Terapkan") { apply(ssid) }
     }
 
@@ -425,7 +545,7 @@ class WifiScreen(private val act: MainActivity) : Screen {
         }
         val advBody = if (advReady && advBlocks.isNotEmpty()) buildAdvancedBody() else null
         // Capture the basic band's advanced picks + switch states on the UI thread.
-        val advBasicVals: List<String>? = if (basicAdvReady) {
+        val advBasicVals: List<String>? = if (basicAdvReady || useMultiSec) {
             if (basicIs5g) listOf(
                 gridChan5?.let { chanVals5[it.sel] } ?: "",
                 bwRow5?.let { BW_VALS[it.sel] } ?: "",
@@ -443,10 +563,41 @@ class WifiScreen(private val act: MainActivity) : Screen {
             val c = act.app().client()
             val errs = mutableListOf<String>()
             var basicOk = false
-            var advBasicOk = !basicAdvReady
+            var advBasicOk = !basicAdvReady && !useMultiSec
+            var multiOk = advBody == null
             try {
                 if (needSecurity) c.setWlanSecurity(authValue, pskToSend)
-                if (basicAdvReady && advBasicVals != null) {
+                if (useMultiSec) {
+                    // vc53: WebUI SELALU mengirim ketiga POST berurutan tanpa
+                    // skip — (1) basic-settings, (2) multi-basic/profil
+                    // (WifiRestart=0), (3) multi-security/channel
+                    // (WifiRestart=1) TERAKHIR. Optimasi skip vc48 dihapus:
+                    // ternyata melewati POST multi-basic membuat router
+                    // menolak POST channel berikutnya (11→1 via app gagal
+                    // padahal via WebUI berhasil).
+                    try {
+                        c.setWlanBasic(ssid, hideVal, enableVal)
+                        basicOk = true
+                    } catch (e: Exception) {
+                        errs.add("dasar: ${e.message}")
+                    }
+                    try {
+                        // advBody selalu terisi di jalur ini (advBlocks
+                        // non-empty saat useMultiSec=true).
+                        c.setWlanMultiBasic(advBody ?: buildAdvancedBody())
+                        multiOk = true
+                    } catch (e: Exception) {
+                        errs.add("sinkron multi-profil: ${e.message}")
+                    }
+                    try {
+                        if (advBasicVals != null) {
+                            c.setWlanMultiSecRaw(buildMultiSecBody(c, advBasicVals))
+                        }
+                        advBasicOk = true
+                    } catch (e: Exception) {
+                        errs.add("lanjutan (multi-security): ${e.message}")
+                    }
+                } else if (basicAdvReady && advBasicVals != null) {
                     try {
                         c.setWlanBasicRaw(buildBasicBody(c, ssid, advBasicVals, isolateVal, hideVal, enableVal))
                         basicOk = true; advBasicOk = true
@@ -462,8 +613,8 @@ class WifiScreen(private val act: MainActivity) : Screen {
             } catch (e: Exception) {
                 errs.add("dasar: ${e.message}")
             }
-            var multiOk = advBody == null
-            if (advBody != null) {
+            // Jalur multi-sec: multi-basic sudah dipost di dalam branch di atas.
+            if (!useMultiSec && advBody != null) {
                 try {
                     c.setWlanMultiBasic(advBody)
                     multiOk = true
@@ -475,15 +626,35 @@ class WifiScreen(private val act: MainActivity) : Screen {
         }) { r ->
             r.onSuccess { (flags, errs) ->
                 val (basicOk, advBasicOk, multiOk) = flags
-                status.text = when {
-                    errs.isEmpty() && basicOk && advBasicOk && multiOk ->
-                        "✓ Diterapkan. Bila WiFi putus, sambungkan ulang lalu kembali ke app."
-                    basicOk || multiOk ->
-                        "Sebagian diterapkan — gagal: ${errs.joinToString("; ")}"
-                    else -> "Gagal: ${errs.joinToString()}"
+                val fullOk = errs.isEmpty() && basicOk && advBasicOk && multiOk
+                val sentCh = advBasicVals?.getOrNull(0)?.ifEmpty { "?" } ?: "?"
+                if (fullOk) {
+                    status.text = "✓ Diterapkan. Mengecek ulang channel router…"
+                    val msMode = useMultiSec
+                    Bg.run({
+                        val cc = act.app().client()
+                        if (msMode) htmlDecode(xmlField(cc.wlanMultiSecRaw(), "WifiChannel"))
+                        else HilinkClient.ci(cc.wlanBasic(), "WifiChannel")
+                    }) { r2 ->
+                        r2.onSuccess { chNow ->
+                            status.text = "Terkirim ch $sentCh. Router sekarang: ch " +
+                                chNow.ifEmpty { "?" } + "."
+                        }
+                        r2.onFailure {
+                            status.text = "✓ Diterapkan. Bila WiFi putus, sambungkan ulang lalu kembali ke app."
+                        }
+                    }
+                } else {
+                    status.text = when {
+                        basicOk || multiOk ->
+                            "Sebagian diterapkan — gagal: ${errs.joinToString("; ")}"
+                        else -> "Gagal: ${errs.joinToString()}"
+                    }
                 }
             }
-            r.onFailure { status.text = "Gagal: ${it.message}" }
+            r.onFailure {
+                status.text = "Gagal: ${it.message}"
+            }
         }
     }
 }
@@ -846,244 +1017,3 @@ class ApnScreen(private val act: MainActivity) : Screen {
     }
 }
 
-// ---------------- Diagnostik ----------------
-
-/**
- * DNS-style diagnostics: one run checks every endpoint, shows a live checklist,
- * and assembles a single JSON report (meta + snapshot + checks + scrubbed raw payloads)
- * that can be copied, shared, or saved to Download — like NetAver DNS's Debug Capture.
- */
-class DiagScreen(private val act: MainActivity) : Screen {
-    private lateinit var status: TextView
-    private lateinit var lines: TextView
-    private var reportJson = ""
-    private var reportName = ""
-
-    private fun ui(block: () -> Unit) {
-        android.os.Handler(android.os.Looper.getMainLooper()).post { block() }
-    }
-
-    override fun build(actA: Activity): View {
-        val ctx = act
-        val (scroll, root) = subPage(act, "Diagnostik", "Laporan lengkap ala Debug Capture NetAver DNS")
-        root.addView(Ui.text(ctx,
-            "Satu ketukan menjalankan pemeriksaan semua endpoint router (sinyal, status, trafik, SMS, APN, USSD) lalu menyusunnya jadi satu laporan JSON — siap disalin, dibagikan, atau disimpan ke folder Download. Nomor seri/IMEI/MAC disamarkan otomatis; kata sandi router tidak pernah masuk laporan.",
-            13f, Ui.SUB))
-        root.addView(gapView(act, 10))
-        status = Ui.text(ctx, "", 13f, Ui.SUB); root.addView(status)
-        val run = Ui.button(ctx, "JALANKAN DIAGNOSTIK")
-        run.setOnClickListener { runDiag() }
-        root.addView(run)
-        root.addView(gapView(act, 10))
-        val row1 = LinearLayout(ctx); row1.orientation = LinearLayout.HORIZONTAL
-        val bCopy = Ui.button(ctx, "SALIN", false)
-        bCopy.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        bCopy.setOnClickListener {
-            if (reportJson.isEmpty()) { Ui.toast(act, "Jalankan diagnostik dulu"); return@setOnClickListener }
-            val cm = act.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-            cm.setPrimaryClip(android.content.ClipData.newPlainText("Diagnostik HiLink", reportJson))
-            Ui.toast(act, "Laporan disalin — tempel & kirim ke chat")
-        }
-        row1.addView(bCopy)
-        val bShare = Ui.button(ctx, "BAGIKAN", false)
-        bShare.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        bShare.setOnClickListener {
-            if (reportJson.isEmpty()) { Ui.toast(act, "Jalankan diagnostik dulu"); return@setOnClickListener }
-            val intent = android.content.Intent(android.content.Intent.ACTION_SEND)
-            intent.type = "text/plain"
-            intent.putExtra(android.content.Intent.EXTRA_SUBJECT, reportName)
-            intent.putExtra(android.content.Intent.EXTRA_TEXT, reportJson)
-            act.startActivity(android.content.Intent.createChooser(intent, "Bagikan laporan diagnostik"))
-        }
-        row1.addView(bShare)
-        root.addView(row1)
-        root.addView(gapView(act, 8))
-        val bSave = Ui.button(ctx, "SIMPAN KE DOWNLOAD", false)
-        bSave.setOnClickListener { saveReport() }
-        root.addView(bSave)
-        root.addView(gapView(act, 12))
-        val card = Ui.card(ctx)
-        lines = Ui.text(ctx, "Hasil pemeriksaan tampil di sini.", 12.5f, Ui.TXT)
-        lines.setTextIsSelectable(true)
-        card.addView(lines)
-        root.addView(card)
-        return scroll
-    }
-
-    private fun saveReport() {
-        if (reportJson.isEmpty()) { Ui.toast(act, "Jalankan diagnostik dulu"); return }
-        try {
-            val cv = android.content.ContentValues()
-            cv.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, reportName)
-            cv.put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/json")
-            val uri = act.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
-                ?: throw IllegalStateException("insert gagal")
-            act.contentResolver.openOutputStream(uri)?.use { it.write(reportJson.toByteArray(Charsets.UTF_8)) }
-            Ui.toast(act, "Tersimpan di Download/$reportName")
-        } catch (e: Exception) {
-            Ui.toast(act, "Gagal menyimpan: ${e.message}")
-        }
-    }
-
-    private fun runDiag() {
-        status.text = "Memeriksa router…"
-        lines.text = ""
-        reportJson = ""
-        val c = act.app().client()
-        val prefs = act.app().prefs
-        Bg.run({
-            val checks = org.json.JSONArray()
-            val snap = org.json.JSONObject()
-            var pendingVariants = org.json.JSONArray()
-            var pendingProbe = org.json.JSONArray()
-            fun line(txt: String) { ui { lines.text = lines.text.toString() + txt + "\n" } }
-            fun check(name: String, block: () -> String): String {
-                val t0 = System.currentTimeMillis()
-                return try {
-                    val detail = block()
-                    val ms = System.currentTimeMillis() - t0
-                    checks.put(org.json.JSONObject().put("name", name).put("ok", true).put("ms", ms).put("detail", detail))
-                    line("✓ $name — $detail (${ms} ms)")
-                    detail
-                } catch (e: Exception) {
-                    val ms = System.currentTimeMillis() - t0
-                    val msg = e.message ?: e.javaClass.simpleName
-                    checks.put(org.json.JSONObject().put("name", name).put("ok", false).put("ms", ms).put("detail", msg))
-                    line("✗ $name — $msg (${ms} ms)")
-                    ""
-                }
-            }
-            check("Jangkauan router") {
-                val r = c.testConnection()
-                if (r.ok) "terjangkau (${r.note})" else throw IllegalStateException(r.note)
-            }
-            check("Sesi login") {
-                c.ensureSession()
-                if (c.loggedIn) "aktif" else throw IllegalStateException("belum login")
-            }
-            check("Informasi perangkat") {
-                val d = c.deviceInfo()
-                snap.put("device", org.json.JSONObject()
-                    .put("name", d.name).put("hardware", d.hw).put("software", d.sw))
-                listOf(d.name, d.sw).filter { it.isNotEmpty() }.joinToString(" · ").ifEmpty { "terbaca" }
-            }
-            var bandShown = ""
-            check("Sinyal") {
-                val sg = c.signal()
-                snap.put("signal", org.json.JSONObject()
-                    .put("rsrp", sg.rsrp).put("rsrq", sg.rsrq).put("sinr", sg.sinr).put("rssi", sg.rssi)
-                    .put("pci", sg.pci).put("cell_id", sg.cellId).put("band", sg.band))
-                bandShown = sg.band
-                "RSRP ${sg.rsrp} · RSRQ ${sg.rsrq} · SINR ${sg.sinr} · PCI ${sg.pci} · Cell ${sg.cellId}" +
-                    if (sg.band.isNotEmpty()) " · Band B${sg.band}" else " · Band: TIDAK DITEMUKAN"
-            }
-            check("Status koneksi") {
-                val st = c.status()
-                snap.put("status", org.json.JSONObject()
-                    .put("connection", st.connectionStatus).put("network_type", st.networkType)
-                    .put("sim", st.simStatus).put("battery", st.batteryLevel))
-                "koneksi ${st.connectionStatus} · tipe ${st.networkType} · SIM ${st.simStatus} · baterai ${st.batteryLevel}"
-            }
-            check("Trafik") {
-                val t = c.traffic()
-                snap.put("traffic", org.json.JSONObject()
-                    .put("session_down", t.curDown).put("session_up", t.curUp)
-                    .put("total_down", t.totalDown).put("total_up", t.totalUp).put("connect_sec", t.connectTimeSec))
-                "sesi ↓${com.netaver.hilink.core.Format.bytes(t.curDown)} ↑${com.netaver.hilink.core.Format.bytes(t.curUp)}"
-            }
-            check("Mode jaringan") {
-                val nm = c.netMode()
-                snap.put("net_mode", org.json.JSONObject()
-                    .put("mode", nm.mode).put("network_band", nm.networkBand).put("lte_band_mask", nm.lteBand))
-                "mode ${nm.mode} · masker LTE ${nm.lteBand}"
-            }
-            check("SMS belum dibaca") { "${c.unreadSms()} pesan" }
-            check("Perangkat terhubung") { "${c.hosts().size} perangkat" }
-            check("Profil APN") {
-                val (list, current) = c.apnProfiles()
-                "${list.size} profil · aktif: $current"
-            }
-            check("Profil WLAN (basic + multi)") {
-                val b = c.wlanBasic()
-                val head = "utama (basic): ${HilinkClient.ci(b, "WifiSsid")} · mode ${HilinkClient.ci(b, "WifiMode")} · ch ${HilinkClient.ci(b, "WifiChannel")} · bw ${HilinkClient.ci(b, "wifibandwidth")} · isolasi ${HilinkClient.ci(b, "WifiIsolate")} · negara ${HilinkClient.ci(b, "WifiCountry")}"
-                val profs = HilinkClient.blocks(c.wlanMultiBasicRaw(), "Ssid")
-                if (profs.isEmpty()) {
-                    head + " || multi-basic kosong"
-                } else {
-                    head + " || " + profs.joinToString(" | ") { blk ->
-                        val m = HilinkClient.parseXml(blk)
-                        "${HilinkClient.ci(m, "WifiSsid")} · mode ${HilinkClient.ci(m, "WifiMode")} · ch ${HilinkClient.ci(m, "WifiChannel")} · bw ${HilinkClient.ci(m, "wifibandwidth")} · isolasi ${HilinkClient.ci(m, "WifiIsolate")} · negara ${HilinkClient.ci(m, "WifiCountry")}"
-                    }
-                }
-            }
-            check("Status USSD") {
-                val m = c.ussdStatus()
-                val st = HilinkClient.ci(m, "result")
-                if (st.isNotEmpty()) "result modem: $st" else "terbaca (${m.size} kolom)"
-            }
-            check("add_param.xml (band jalur mod)") {
-                val ap = c.addParam()
-                val b = HilinkClient.ci(ap, "band")
-                val e = HilinkClient.ci(ap, "earfcn1")
-                if (b.isEmpty() && e.isEmpty()) throw IllegalStateException("file ada tapi band kosong")
-                "band=$b · earfcn=$e · freq=${HilinkClient.ci(ap, "freq1")} · lac=${HilinkClient.ci(ap, "lac")}"
-            }
-            val variants = org.json.JSONArray()
-            check("Varian sinyal (perburuan band)") {
-                var found = ""
-                val verdicts = ArrayList<String>()
-                for ((name, raw) in c.signalVariants()) {
-                    variants.put(org.json.JSONObject().put("name", name).put("raw", raw))
-                    val b = com.netaver.hilink.core.Format.bandFromRawXml(raw)
-                    val rich = raw.contains("earfcn", true) || raw.contains("txpower", true)
-                    verdicts.add("$name: " + when {
-                        b != null -> "BAND B$b KETEMU"
-                        rich -> "ada earfcn/txpower"
-                        raw.startsWith("ERROR") -> raw.lineSequence().firstOrNull() ?: "error"
-                        else -> "sama (minim)"
-                    })
-                    if (b != null && found.isEmpty()) found = "B$b via $name"
-                }
-                if (found.isEmpty()) verdicts.joinToString(" | ") else "$found || " + verdicts.joinToString(" | ")
-            }
-            pendingVariants = variants
-            val probeArr = org.json.JSONArray()
-            check("Bedah JS WebUI (jalur band/USSD mod)") {
-                val probe = c.webUiProbe()
-                for ((n, v2) in probe) probeArr.put(org.json.JSONObject().put("name", n).put("content", v2))
-                val apis = probe.firstOrNull { it.first.startsWith("endpoint api unik") }?.second ?: ""
-                apis.take(220).ifEmpty { "tidak ada endpoint ditemukan" }
-            }
-            pendingProbe = probeArr
-            val rawDump = check("Data mentah endpoint") {
-                val d = c.rawDump()
-                "terkumpul ${d.length} karakter"
-                d
-            }
-            val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
-            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
-            val now = java.util.Date()
-            val root = org.json.JSONObject()
-            root.put("app", "NetAver HiLink")
-            root.put("generated", fmt.format(now))
-            root.put("app_version", "2.1.8 (15)")
-            root.put("android", "${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})")
-            root.put("phone", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
-            root.put("router_address", prefs.routerIp)
-            root.put("band_resolved", bandShown)
-            root.put("checks", checks)
-            root.put("snapshot", snap)
-            root.put("raw_dump", rawDump)
-            root.put("signal_variants", pendingVariants)
-            root.put("webui_probe", pendingProbe)
-            reportName = "netaver-hilink-diagnostik-" + stamp.format(now) + ".json"
-            root.toString(2)
-        }) { r ->
-            r.onSuccess {
-                reportJson = it
-                status.text = "✓ Selesai — laporan siap: SALIN / BAGIKAN / SIMPAN."
-            }
-            r.onFailure { status.text = "Gagal menyusun laporan: ${it.message}" }
-        }
-    }
-}

@@ -72,7 +72,6 @@ class SettingsScreen(private val act: MainActivity) : Screen {
         root.addView(navRow("LAN & DHCP", "IP router, rentang DHCP, lama sewa") { act.show(MainActivity.TAB_DHCP) })
         root.addView(navRow("USSD", "Kode dial operator (*123# dll.) dari SIM router") { act.show(MainActivity.TAB_USSD) })
         root.addView(navRow("Profil APN", "Daftar profil APN: buat, ubah, jadikan aktif") { act.show(MainActivity.TAB_APN) })
-        root.addView(navRow("Diagnostik", "Laporan lengkap: cek semua endpoint + data mentah (ala NetAver DNS)") { act.show(MainActivity.TAB_DIAG) })
         root.addView(gapView2(6))
 
         // MOD WEBUI (Mod1.21 only): built once, hidden until onShow() proves

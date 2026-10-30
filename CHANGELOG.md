@@ -1,5 +1,97 @@
-## v2.4.0 — 28 Oktober 2026 / October 28, 2026
+## v2.5.0 — 30 Oktober 2026 / October 30, 2026
 
+- Login sekarang menggunakan WebView. / Login now uses WebView.
+- Perbaikan channel WiFi tidak mau berubah. / Fixed WiFi channel not changing.
+- Tambah menu analisis WiFi. / Added WiFi analysis menu.
+
+## v2.4.20 — 30 Oktober 2026 / October 30, 2026
+
+- Baru: login kini lewat WebView tersembunyi persis seperti browser — sesi yang didapat 100% identik dengan sesi WebUI. Kalau WebView gagal, otomatis kembali ke login API biasa. / New: login now goes through a hidden WebView exactly like a browser — the session obtained is 100% identical to a WebUI session. If WebView fails, it automatically falls back to regular API login.
+
+## v2.4.19 — 30 Oktober 2026 / October 30, 2026
+
+- Baru: sebelum menerapkan pengaturan WiFi, aplikasi kini login ulang otomatis agar memegang sesi aktif (menendang sesi WebUI lain bila ada). Dialog diagnostik channel dihapus. / New: before applying WiFi settings, the app now re-logs in automatically to hold the active session (kicking any other WebUI session). The channel diagnostic dialog has been removed.
+
+## v2.4.18 — 30 Oktober 2026 / October 30, 2026
+
+- Perbaikan: header Referer kini menunjuk ke halaman pengaturan WiFi persis seperti WebUI, agar router mengenali permintaan ganti channel sebagai dari browser. Dialog diagnostik masih ada untuk verifikasi. / Fixed: the Referer header now points to the WiFi settings page exactly like the WebUI, so the router recognizes channel-change requests as coming from a browser. The diagnostic dialog is still present for verification.
+
+## v2.4.17 — 30 Oktober 2026 / October 30, 2026
+
+- Perbaikan: ganti channel kini selalu dikirim lengkap seperti WebUI (tanpa ada langkah yang dilewati) agar router menerimanya setiap saat. Dialog diagnostik masih ada untuk verifikasi. / Fixed: channel changes are now always sent completely like the WebUI (no step skipped) so the router accepts them every time. The diagnostic dialog is still present for verification.
+
+## v2.4.16 — 30 Oktober 2026 / October 30, 2026
+
+- Perbaikan: permintaan ganti channel kini 100% mirip browser (body satu baris tanpa jeda baris + header Referer/Origin) agar diproses router seperti dari WebUI. Dialog diagnostik masih ada untuk verifikasi. / Fixed: channel-change requests are now 100% browser-like (single-line body with no line breaks + Referer/Origin headers) so the router processes them as if from the WebUI. The diagnostic dialog is still present for verification.
+
+## v2.4.15 — 30 Oktober 2026 / October 30, 2026
+
+- Perbaikan: header permintaan ke router kini persis seperti WebUI (dan koneksi tidak dipakai ulang) agar perintah ganti channel diproses router. Dialog diagnostik masih ada untuk verifikasi. / Fixed: request headers to the router now exactly match the WebUI (and connections are not reused) so channel-change commands are processed by the router. The diagnostic dialog is still present for verification.
+
+## v2.4.14 — 30 Oktober 2026 / October 30, 2026
+
+- Perbaikan: token keamanan ke router kini dikelola seperti WebUI (sekali pakai per permintaan) agar perintah ganti channel tidak diabaikan router. Dialog diagnostik masih ada untuk verifikasi. / Fixed: the security token to the router is now managed like the WebUI (single-use per request) so channel-change commands are no longer ignored by the router. The diagnostic dialog is still present for verification.
+
+## v2.4.13-diag — 30 Oktober 2026 / October 30, 2026 — DIAGNOSTIK, BUKAN RILIS / DIAGNOSTIC, NOT A RELEASE
+
+- Build diagnostik: setelah SIMPAN, tampilkan dialog berisi byte persis body POST multi-security-settings, response mentah router, dan hasil GET mentah (untuk melacak kenapa ganti channel tidak mempan). Password WiFi disamarkan. / Diagnostic build: after applying, shows a dialog with the exact POST multi-security-settings body bytes, the router's raw response, and the raw GET result (to trace why channel changes don't take effect). WiFi passwords are masked.
+
+## v2.4.12 — 30 Oktober 2026 / October 30, 2026
+
+- Perbaikan: ganti channel WiFi kini dikirim persis seperti cara WebUI (tanpa data tambahan yang tidak diperlukan). / Fixed: changing the WiFi channel is now sent exactly the way the WebUI does it (without extra unneeded data).
+
+## v2.4.11 — 30 Oktober 2026 / October 30, 2026
+
+- Perbaikan: ganti channel WiFi kini benar-benar diterapkan di router. / Fixed: changing the WiFi channel now actually applies on the router.
+- Tampilan mode WiFi yang sempat berantakan kini sudah benar. / The WiFi mode label that briefly showed garbled text now displays correctly.
+
+## v2.4.10 — 30 Oktober 2026 / October 30, 2026
+
+- Perbaikan: ganti channel WiFi kini benar-benar diterapkan di router (sebelumnya router mengabaikannya diam-diam). / Fixed: changing the WiFi channel now actually applies on the router (previously the router silently ignored it).
+
+## v2.4.9 — 30 Oktober 2026 / October 30, 2026
+
+- Layar WiFi kini menampilkan info diagnostik channel (sumber basic vs profil) untuk melacak masalah ganti channel. / The WiFi screen now shows channel diagnostic info (basic vs profile source) to trace channel-change issues.
+- Dialog konfirmasi menampilkan channel yang akan dikirim, dan status menampilkan hasil baca-ulang channel dari router setelah diterapkan. / The confirmation dialog shows the channel to be sent, and the status shows the router's re-read channel after applying.
+
+## v2.4.8 — 29 Oktober 2026 / October 29, 2026
+
+- Ketuk bar di grafik Analisa Channel untuk melihat daftar SSID di channel tersebut (nama, sinyal, keamanan). / Tap a bar in the Channel Analyzer chart to see the SSID list on that channel (name, signal, security).
+
+## v2.4.7 — 29 Oktober 2026 / October 29, 2026
+
+- Hasil Analisa Channel sekarang berupa grafik bar yang ringkas — 13 channel langsung terlihat sekilas. / The Channel Analyzer results are now a compact bar chart — all 13 channels visible at a glance.
+
+## v2.4.6 — 29 Oktober 2026 / October 29, 2026
+
+- Tab WiFi punya Analisa Channel: pindai jaringan WiFi sekitar dari HP dan lihat channel yang paling sepi. / The WiFi tab now has a Channel Analyzer: scan nearby WiFi networks from the phone and see the least congested channel.
+- Tombol "Pakai channel" langsung memilih channel yang disarankan di tab WiFi. / The "Use channel" button selects the recommended channel right in the WiFi tab.
+
+## v2.4.5 — 28 Oktober 2026 / October 28, 2026
+
+- Tombol mata di layar Perangkat sekarang seperti di tab Ganti IMEI dengan background gelap. / The eye toggle on the Devices screen now matches the Change IMEI tab with a dark background.
+- Background ikon aplikasi sekarang hitam dengan huruf H hijau. / The app icon background is now black with a green H letter.
+
+## v2.4.4 — 28 Oktober 2026 / October 28, 2026
+
+- Blok RSSI di layar Arah Antena sekarang sejajar dengan kolom RSRQ. / The RSSI block on the Antenna Direction screen is now aligned with the RSRQ column.
+- Background ikon aplikasi sekarang abu-abu. / The app icon background is now gray.
+- Layar Perangkat: IMEI punya tombol mata dan Serial tampil penuh. / Devices screen: IMEI has an eye toggle and Serial is shown in full.
+
+## v2.4.3 — 28 Oktober 2026 / October 28, 2026
+
+- Label RSSI di layar Arah Antena sekarang di tengah di atas nilainya, dan angka RSSI sama besar dengan angka RSRP/SINR/RSRQ. / The RSSI label on the Antenna Direction screen is now centered above its value, and the RSSI number is the same size as the RSRP/SINR/RSRQ numbers.
+
+## v2.4.2 — 28 Oktober 2026 / October 28, 2026
+
+- Baris sinyal di layar Arah Antena sekarang di tengah dengan teks lebih kecil. / The signal row on the Antenna Direction screen is now centered with smaller text.
+
+## v2.4.1 — 28 Oktober 2026 / October 28, 2026
+
+- Ganti IMEI sekarang permanen lewat NV dan selalu minta konfirmasi dulu. / Changing IMEI is now permanent via NV and always asks for confirmation first.
+- Pilihan cadangan sebelum ubah dihapus. / The backup choice before changing has been removed.
+
+## v2.4.0 — 28 Oktober 2026 / October 28, 2026
 - Dukungan ganti IMEI dan TTL. / Support for changing IMEI and TTL.
 - Tampilkan IP WAN dan tombol data on/off. / Show WAN IP and data on/off button.
 - Dukungan cek versi rilis. / Support for checking the release version.

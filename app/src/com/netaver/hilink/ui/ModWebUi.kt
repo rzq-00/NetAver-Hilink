@@ -256,12 +256,6 @@ class ModDialogs(private val act: MainActivity, private val onRefresh: () -> Uni
         editRow.addView(pasteNew)
         root.addView(editRow)
 
-        root.addView(lab("CADANGAN SEBELUM UBAH"))
-        val backupLabels = listOf("Tanpa cadangan", "NV Backup", "Info Backup")
-        val backupValues = listOf("none", "nvbackup", "inforbu")
-        val (chipWrap, getBackup) = chipGroup(backupLabels, 0)
-        root.addView(chipWrap)
-
         val dlg = AlertDialog.Builder(act)
             .setTitle("Ubah IMEI")
             .setView(scrollWrap(root))
@@ -269,41 +263,25 @@ class ModDialogs(private val act: MainActivity, private val onRefresh: () -> Uni
             .setPositiveButton("Simpan", null)
             .create()
         dlg.show()
-        val saveBtn = dlg.getButton(AlertDialog.BUTTON_POSITIVE)
-        saveBtn.isEnabled = ImeiKit.isValidImei(prefillNew)
-        edit.addTextChangedListener(watcher { s -> saveBtn.isEnabled = ImeiKit.isValidImei(s) })
-        saveBtn.setOnClickListener {
-            val newImei = edit.text.toString()
-            if (!ImeiKit.isValidImei(newImei)) {
-                Ui.toast(act, "IMEI baru harus 15 digit dan lolos cek digit")
-                return@setOnClickListener
-            }
-            val backup = backupValues[getBackup()]
-            dlg.dismiss()
+        // Permanent via NV: every IMEI change writes nvbackup into the
+        // modem's live user_config.xml before the IMEI is set. If no live
+        // config exists, abort — the modem would silently fall back to
+        // its package default (none), which would not be permanent.
+        fun applyImeiChange(newImei: String) {
             Bg.run(
                 {
                     val client = act.app().client()
-                    // Backup mode lives in the modem's live user_config.xml and
-                    // is read by the IMEI endpoint at request time, so update
-                    // it first when a live config exists. Without a live config
-                    // the modem falls back to its package default (none): a
-                    // "none" choice needs no update, any other choice aborts
-                    // rather than silently changing IMEI with the wrong backup.
-                    var live: String? = null
-                    try {
-                        live = client.modUserConfig()
+                    val live: String = try {
+                        client.modUserConfig()
                     } catch (e: HilinkClient.HilinkException) {
                         if (e.code != "MODCFG") throw e
-                    }
-                    if (live != null) {
-                        val updated = live.replace(
-                            Regex("<backup_imei>[^<]*</backup_imei>"),
-                            "<backup_imei>$backup</backup_imei>"
-                        )
-                        client.modUserConfigSave(updated)
-                    } else if (backup != "none") {
                         throw HilinkException2("Konfigurasi mod belum tersimpan di perangkat. Buka panel Mod WebUI sekali dan simpan, lalu coba lagi.")
                     }
+                    val updated = live.replace(
+                        Regex("<backup_imei>[^<]*</backup_imei>"),
+                        "<backup_imei>nvbackup</backup_imei>"
+                    )
+                    client.modUserConfigSave(updated)
                     client.modSetImei(newImei)
                     client.modApply()
                 },
@@ -318,6 +296,39 @@ class ModDialogs(private val act: MainActivity, private val onRefresh: () -> Uni
                     }
                 }
             )
+        }
+        val saveBtn = dlg.getButton(AlertDialog.BUTTON_POSITIVE)
+        saveBtn.isEnabled = ImeiKit.isValidImei(prefillNew)
+        edit.addTextChangedListener(watcher { s -> saveBtn.isEnabled = ImeiKit.isValidImei(s) })
+        saveBtn.setOnClickListener {
+            val newImei = edit.text.toString()
+            if (!ImeiKit.isValidImei(newImei)) {
+                Ui.toast(act, "IMEI baru harus 15 digit dan lolos cek digit")
+                return@setOnClickListener
+            }
+            // Confirmation first: the change is permanent. Batal dismisses
+            // only this confirmation, leaving the Ubah IMEI dialog open.
+            val msgText = "Ganti IMEI ini permanen,\nAnda Yakin??"
+            val span = SpannableString(msgText)
+            span.setSpan(
+                StyleSpan(Typeface.ITALIC), 0, msgText.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            span.setSpan(
+                ForegroundColorSpan(Ui.AMBER), 0, msgText.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            val confirm = AlertDialog.Builder(act)
+                .setMessage(span)
+                .setNegativeButton("Batal", null)
+                .setPositiveButton("OK", null)
+                .create()
+            confirm.show()
+            confirm.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                confirm.dismiss()
+                dlg.dismiss()
+                applyImeiChange(newImei)
+            }
         }
     }
 
