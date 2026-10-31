@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.text.InputType
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -475,6 +476,10 @@ class WifiScreen(private val act: MainActivity) : Screen {
         val sb = StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?><request><Ssids>")
         advBlocks.forEachIndexed { i, orig ->
             var b = orig
+            // WebUI (wlanadvanced.js:430-440): hapus field password sebelum POST multi-basic.
+            listOf("WifiWpapsk", "MixWifiWpapsk", "WifiWepKey1", "WifiWepKey2", "WifiWepKey3",
+                   "WifiWepKey4", "WifiWep128Key1", "WifiWep128Key2", "WifiWep128Key3", "WifiWep128Key4")
+                .forEach { f -> b = b.replace(Regex("<$f>.*?</$f>|<$f\\s*/>"), "") }
             if (advIs5g[i]) {
                 gridChan5?.let { b = patchXmlField(b, "WifiChannel", chanVals5[it.sel]) }
                 bwRow5?.let { b = patchXmlField(b, "wifibandwidth", BW_VALS[it.sel]) }
@@ -485,12 +490,10 @@ class WifiScreen(private val act: MainActivity) : Screen {
                 modeRow24?.let { b = patchXmlField(b, "WifiMode", modeVals24[it.sel]) }
             }
             b = patchXmlField(b, "WifiIsolate", if (isolateSw.isChecked) "1" else "0")
-            // WebUI: multi-basic TIDAK me-restart (WifiRestart: 0) — restart
-            // hanya sekali di POST multi-security terakhir.
-            if (b.contains("<WifiRestart>")) b = patchXmlField(b, "WifiRestart", "0")
             sb.append(b)
         }
-        sb.append("</Ssids></request>")
+        // WebUI: WifiRestart=0 di ROOT sebagai sibling <Ssids> (bukan di dalam blok <Ssid>).
+        sb.append("</Ssids><WifiRestart>0</WifiRestart></request>")
         return sb.toString()
     }
 
@@ -535,6 +538,8 @@ class WifiScreen(private val act: MainActivity) : Screen {
     }
 
     private fun apply(ssid: String) {
+        // vc63: log diagnostik jalur SIMPAN.
+        Log.d("SAVE", "useMultiSec=$useMultiSec path=${if (useMultiSec) "buildMultiSecBody" else "basic"}")
         val authValue = listOf("WPA2-PSK", "WPA/WPA2-PSK", "OPEN")[authRow.sel]
         val pskText = pskIn.text.toString()
         val needSecurity = authValue != origAuth || pskText.isNotEmpty()
@@ -566,21 +571,17 @@ class WifiScreen(private val act: MainActivity) : Screen {
             var advBasicOk = !basicAdvReady && !useMultiSec
             var multiOk = advBody == null
             try {
-                if (needSecurity) c.setWlanSecurity(authValue, pskToSend)
+                // vc64: samakan dengan WebUI (wlanadvanced.js) — saat useMultiSec,
+                // HANYA kirim multi-basic → multi-security. SKIP security-settings
+                // dan basic-settings (WebUI tidak kirim keduanya di flow advanced;
+                // log vc63 membuktikan 2 POST ekstra merusak sesi).
+                if (needSecurity && !useMultiSec) c.setWlanSecurity(authValue, pskToSend)
                 if (useMultiSec) {
-                    // vc53: WebUI SELALU mengirim ketiga POST berurutan tanpa
-                    // skip — (1) basic-settings, (2) multi-basic/profil
-                    // (WifiRestart=0), (3) multi-security/channel
-                    // (WifiRestart=1) TERAKHIR. Optimasi skip vc48 dihapus:
-                    // ternyata melewati POST multi-basic membuat router
-                    // menolak POST channel berikutnya (11→1 via app gagal
-                    // padahal via WebUI berhasil).
-                    try {
-                        c.setWlanBasic(ssid, hideVal, enableVal)
-                        basicOk = true
-                    } catch (e: Exception) {
-                        errs.add("dasar: ${e.message}")
-                    }
+                    // vc64: WebUI advanced HANYA (1) multi-basic/profil
+                    // (WifiRestart=0), (2) multi-security/channel
+                    // (WifiRestart=1) TERAKHIR. basic-settings dan
+                    // security-settings TIDAK dikirim.
+                    basicOk = true // skip disengaja, bukan gagal
                     try {
                         // advBody selalu terisi di jalur ini (advBlocks
                         // non-empty saat useMultiSec=true).
@@ -591,7 +592,13 @@ class WifiScreen(private val act: MainActivity) : Screen {
                     }
                     try {
                         if (advBasicVals != null) {
-                            c.setWlanMultiSecRaw(buildMultiSecBody(c, advBasicVals))
+                            // vc60: DOM round-trip (saran tobi) gantikan string-replace
+                            // buildMultiSecBody — GET utuh, edit node via DOM, POST utuh.
+                            val ok = c.setMultiSecDom(
+                                advBasicVals.getOrNull(0)?.ifEmpty { null },
+                                advBasicVals.getOrNull(1)?.ifEmpty { null },
+                                advBasicVals.getOrNull(2)?.ifEmpty { null })
+                            if (!ok) throw HilinkException("CHANNEL", "Router menolak perubahan channel")
                         }
                         advBasicOk = true
                     } catch (e: Exception) {

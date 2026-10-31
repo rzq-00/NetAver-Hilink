@@ -1,6 +1,7 @@
 package com.netaver.hilink.net
 
 import android.util.Base64
+import android.util.Log
 import android.util.Xml
 import com.netaver.hilink.core.Errors
 import org.xmlpull.v1.XmlPullParser
@@ -95,11 +96,20 @@ class HilinkClient(
     @Synchronized
     private fun harvestTokens(c: HttpURLConnection) {
         val want = listOf("__RequestVerificationToken", "__RequestVerificationTokenone", "__RequestVerificationTokentwo")
+        // vc62: token lama tidak valid setelah ada respons baru (seperti WebUI) —
+        // kosongkan antrean dulu, baru isi dengan token dari respons ini.
+        val fresh = mutableListOf<String>()
         for ((k, vals) in c.headerFields) {
             if (k != null && want.any { it.equals(k, ignoreCase = true) }) {
-                vals?.forEach { t -> if (t.isNotEmpty() && t !in tokenQueue) tokenQueue.addLast(t) }
+                vals?.forEach { t -> if (t.isNotEmpty() && t !in fresh) fresh.add(t) }
             }
         }
+        if (fresh.isNotEmpty()) {
+            tokenQueue.clear()
+            fresh.forEach { tokenQueue.addLast(it) }
+        }
+        // vc63: log diagnostik antrean token.
+        Log.d("TOKQ", "size=${tokenQueue.size} heads=${tokenQueue.take(3).map { it.take(12) }}")
     }
 
     /**
@@ -124,6 +134,7 @@ class HilinkClient(
 
     @Synchronized
     fun ensureSession() {
+        if (manualLoggedOut) throw HilinkException("LOGIN", "Belum login — tekan LOGIN untuk masuk")
         if (loggedIn && hasTokens()) return
         loginLocked(manual = false)
     }
@@ -133,6 +144,7 @@ class HilinkClient(
     fun login(manual: Boolean = false) = loginLocked(manual)
 
     private fun loginLocked(manual: Boolean) {
+        manualLoggedOut = false
         val now = System.currentTimeMillis()
         if (now < lockoutUntilMs) {
             val s = (lockoutUntilMs - now + 999) / 1000
@@ -225,6 +237,7 @@ class HilinkClient(
     fun logout() {
         try { raw("POST", "/api/user/logout", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><request></request>") } catch (e: Exception) { }
         sessionId = ""; clearTokens(); loggedIn = false
+        manualLoggedOut = true
     }
 
     /**
@@ -253,6 +266,7 @@ class HilinkClient(
         loggedIn = true
         loginAtMs = System.currentTimeMillis()
         failStreak = 0; lastFailMs = 0; lastFailMsg = ""
+        manualLoggedOut = false
     }
 
     /** Reachability + login requirements WITHOUT spending a password attempt. */
@@ -288,6 +302,9 @@ class HilinkClient(
     // ---------------- request plumbing ----------------
 
     private fun authed(method: String, path: String, body: String?): Map<String, String> {
+        // vc63: log diagnostik sebelum kirim POST.
+        if (method == "POST" && body != null)
+            Log.d("POST", "$path bodyLen=${body.length} tokHead=${tokenQueue.firstOrNull()?.take(12)} qsize=${tokenQueue.size}")
         var r = raw(method, path, body)
         var code = r["__code"]
         if (code != null && Errors.isSessionError(code)) {
@@ -297,6 +314,15 @@ class HilinkClient(
             code = r["__code"]
         }
         if (code != null) throw HilinkException(code, Errors.describe(code))
+        // vc60: POST tulis yang dibalas KOSONG = router membuangnya diam-diam
+        // (gejala konflik sesi; firmware ini mengizinkan banyak sesi bersamaan).
+        // Dulu lolos tanpa error -> UI bilang "Diterapkan" padahal tidak terjadi
+        // apa-apa. Sekarang: pesan jelas agar logout dari perangkat/WebUI lain dulu.
+        // Hanya untuk POST ber-body (tulis); POST tanpa body adalah baca-fallback
+        // yang memang mentolerir respons kosong.
+        if (method == "POST" && body != null && r.isEmpty())
+            throw HilinkException("SESI",
+                "Ada perangkat lain yang sedang login ke router \u2014 logout dari sana dulu, lalu coba lagi.")
         return r
     }
 
@@ -746,6 +772,85 @@ class HilinkClient(
         authed("POST", "/api/wlan/multi-security-settings", requestBody)
     }
 
+    /**
+     * vc60: DOM-based multi-security-settings round-trip (saran tobi AI).
+     * GET utuh -> edit node WifiChannel/wifibandwidth/WifiMode via DOM ->
+     * pastikan WifiRestart=1 -> serialize balik UTUH dengan urutan asli ->
+     * POST sebagai <request>. Tidak pilih-pilih field, tidak reorder.
+     * Return true jika sukses, false jika gagal. HilinkException (sesi/auth/
+     * konflik) dibiarkan naik agar pesannya akurat di UI.
+     */
+    fun setMultiSecDom(channel: String?, bw: String?, mode: String?): Boolean {
+        val raw = authed("GET", "/api/wlan/multi-security-settings", null)["__raw"] ?: ""
+        if (raw.isEmpty() || raw.contains("<error")) return false
+        val body = try {
+            domRoundTrip(raw, channel, bw, mode)
+        } catch (e: Exception) {
+            return false
+        } ?: return false
+        val postRaw = authed("POST", "/api/wlan/multi-security-settings", body)["__raw"] ?: ""
+        // vc63: log diagnostik respons multi-sec.
+        Log.d("POST", "multi-sec respLen=${postRaw.length} hasError=${postRaw.contains("<error")}")
+        return !postRaw.contains("<error")
+    }
+
+    private fun domRoundTrip(raw: String, channel: String?, bw: String?, mode: String?): String? {
+        val doc = parseXmlDom(raw)
+        val response = doc.getElementsByTagName("response").item(0) as? org.w3c.dom.Element
+            ?: return null
+        if (doc.getElementsByTagName("error").length > 0) return null
+        if (!channel.isNullOrEmpty()) {
+            val n = response.getElementsByTagName("WifiChannel").item(0) as? org.w3c.dom.Element
+                ?: return null
+            n.textContent = channel
+        }
+        if (!bw.isNullOrEmpty()) {
+            (response.getElementsByTagName("wifibandwidth").item(0) as? org.w3c.dom.Element)
+                ?.textContent = bw
+        }
+        if (!mode.isNullOrEmpty()) {
+            (response.getElementsByTagName("WifiMode").item(0) as? org.w3c.dom.Element)
+                ?.textContent = mode
+        }
+        val rs = response.getElementsByTagName("WifiRestart").item(0) as? org.w3c.dom.Element
+        if (rs != null) rs.textContent = "1" else {
+            val r = doc.createElement("WifiRestart")
+            r.textContent = "1"
+            response.appendChild(r)
+        }
+        // Samakan output object2xml WebUI: satu baris, tanpa newline.
+        return toXmlRequestDom(doc, response).replace("\n", "").replace("\r", "")
+    }
+
+    private fun parseXmlDom(xml: String): org.w3c.dom.Document {
+        val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+        try {
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        } catch (e: Exception) { /* tidak didukung di perangkat ini, abaikan */ }
+        factory.isNamespaceAware = false
+        return factory.newDocumentBuilder()
+            .parse(java.io.ByteArrayInputStream(xml.toByteArray(Charsets.UTF_8)))
+    }
+
+    private fun toXmlRequestDom(doc: org.w3c.dom.Document, response: org.w3c.dom.Element): String {
+        val req = response.cloneNode(true) as org.w3c.dom.Element
+        doc.renameNode(req, null, "request")
+        val transformer = javax.xml.transform.TransformerFactory.newInstance().newTransformer()
+        transformer.setOutputProperty(javax.xml.transform.OutputKeys.OMIT_XML_DECLARATION, "no")
+        transformer.setOutputProperty(javax.xml.transform.OutputKeys.STANDALONE, "yes")
+        transformer.setOutputProperty(javax.xml.transform.OutputKeys.ENCODING, "UTF-8")
+        val out = java.io.ByteArrayOutputStream()
+        transformer.transform(
+            javax.xml.transform.dom.DOMSource(req),
+            javax.xml.transform.stream.StreamResult(out)
+        )
+        var s = out.toString("UTF-8")
+        // Normalisasi XML declaration agar identik dengan WebUI:
+        // <?xml version="1.0" encoding="UTF-8"?>
+        s = s.replaceFirst(Regex("<\\?xml[^>]*\\?>"), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+        return s
+    }
+
     // ---------------- Router settings: DHCP ----------------
 
     fun dhcpSettings(): Map<String, String> = authed("GET", "/api/dhcp/settings", null)
@@ -1057,6 +1162,11 @@ class HilinkClient(
     // ---------------- helpers ----------------
 
     companion object {
+        /** vc59: sticky manual logout — when true, ensureSession() refuses to
+         *  auto-login (logout stays "lengket" until user taps LOGIN explicitly).
+         *  Static so it survives client recreation via resetClient(). */
+        @Volatile var manualLoggedOut = false
+
         /** Case-insensitive lookup (firmwares differ in element capitalization). */
         private val SENSITIVE_TAG = Regex("(?i)(<(?:imei|imsi|iccid|msisdn|serialnumber|macaddress\\w*|phonenumber)>)[^<]*")
         fun scrubXml(s: String): String = SENSITIVE_TAG.replace(s) { it.groupValues[1] + "***" }

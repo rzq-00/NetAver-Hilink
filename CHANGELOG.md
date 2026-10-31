@@ -1,3 +1,28 @@
+## v2.5.6 — 31 Oktober 2026 / October 31, 2026
+
+- Ganti channel wifi sudah di fix lagi. / WiFi channel change fixed again.
+
+## v2.5.5 — 31 Oktober 2026 / October 31, 2026
+
+- Tambah log diagnostik untuk penelusuran masalah channel (tag logcat: POST, TOKQ, SAVE). / Added diagnostic logging for channel troubleshooting (logcat tags: POST, TOKQ, SAVE).
+
+## v2.5.4 — 31 Oktober 2026 / October 31, 2026
+
+- Perbaikan: token keamanan kini selalu diperbarui dari respons terakhir agar perintah ke router tidak ditolak diam-diam. / Fixed: the security token is now always refreshed from the latest response so commands to the router are no longer silently rejected.
+
+## v2.5.3 — 31 Oktober 2026 / October 31, 2026
+
+- Perbaikan: pengiriman pengaturan WiFi lanjutan kini persis seperti WebUI (tanpa field password, WifiRestart di posisi yang benar) agar router menerimanya setiap saat. / Fixed: advanced WiFi settings are now sent exactly like the WebUI (no password fields, WifiRestart in the correct position) so the router accepts them every time.
+
+## v2.5.2 — 31 Oktober 2026 / October 31, 2026
+
+- Perbaikan: ganti channel WiFi kini memakai round-trip XML penuh persis seperti WebUI (tidak pilih-pilih field, urutan dipertahankan) agar router selalu menerapkannya. / Fixed: WiFi channel changes now use a full XML round-trip exactly like the WebUI (no field selection, order preserved) so the router always applies them.
+- Baru: peringatan yang jelas kalau perintah ke router diam-diam tidak diproses — biasanya karena ada perangkat lain yang sedang login ke router. Aplikasi tidak lagi bilang "berhasil" padahal tidak terjadi apa-apa. / New: a clear warning when a command to the router is silently ignored — usually because another device is logged into the router. The app no longer claims success when nothing happened.
+
+## v2.5.1 — 31 Oktober 2026 / October 31, 2026
+
+- Perbaikan: logout kini "lengket" — setelah tekan LOGOUT, aplikasi tidak login otomatis lagi saat pindah tab, sampai kamu tekan LOGIN sendiri. / Fixed: logout is now "sticky" — after tapping LOGOUT, the app no longer auto-logs in when switching tabs, until you tap LOGIN yourself.
+
 ## v2.5.0 — 30 Oktober 2026 / October 30, 2026
 
 - Login sekarang menggunakan WebView. / Login now uses WebView.
